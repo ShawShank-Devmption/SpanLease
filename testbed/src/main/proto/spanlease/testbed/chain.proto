@@ -1,0 +1,45 @@
+// SpanLease testbed RPC contract (frozen — contract-tagged PR to change; design.md §2).
+//
+// One generic blocking unary service, deployed as three instances (svcA, svcB, svcC).
+// A request carries the REMAINDER of a call chain; each server pops the head hop,
+// simulates work, and if hops remain, makes a blocking Call to the next target with the
+// tail. This one shape expresses every workload in design.md §9.3: linear chains,
+// deadlock cycles (A→B→C→A), spare-capacity cycles, slow-but-progressing hops — driven
+// entirely by data from the workload driver, with no per-scenario server code.
+syntax = "proto3";
+
+package spanlease.testbed;
+
+option java_multiple_files = true;
+option java_package = "dev.spanlease.testbed.proto";
+
+service Chain {
+  // Synchronous blocking unary — the ONLY rpc in the system (scope: requirements.md §3).
+  rpc Call(CallRequest) returns (CallReply);
+}
+
+message CallRequest {
+  // Workload-driver-assigned id for ground-truth joining. NOT the SpanLease
+  // invocation_id — that is generated per hop by the client interceptor and travels in
+  // gRPC metadata (design.md §4), never in the request body.
+  string request_id = 1;
+  // Hops still to execute; the receiving server is remaining[0]'s target.
+  repeated Hop remaining = 2;
+}
+
+message Hop {
+  // Logical target service name ("svcA" | "svcB" | "svcC"); the driver and servers
+  // resolve names to channels from static config.
+  string target_service = 1;
+  // Busy-work the server performs before dispatching the next hop (0 = none).
+  uint32 work_ms = 2;
+  // Extra hold time AFTER the downstream call returns, before replying upstream.
+  // Lets scenarios keep slots occupied without blocking (hard negatives, §9.3).
+  uint32 post_hold_ms = 3;
+}
+
+message CallReply {
+  string request_id = 1;
+  // Hops completed downstream of (and including) this server — sanity check for driver.
+  uint32 hops_completed = 2;
+}

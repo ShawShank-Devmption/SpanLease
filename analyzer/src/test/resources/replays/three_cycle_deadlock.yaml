@@ -1,0 +1,46 @@
+# Canonical 3-service cycle (A -> B -> C -> A), k=1 each, perfect delivery.
+# Mirrors the motivating execution in the proposal (Fig. 1) at minimum size.
+# Expected: CONFIRMED_DEADLOCK with the exact core, once persistence >= tau.
+name: three_cycle_deadlock
+seed: 42
+instances: [driver-1, svcA-1, svcB-1, svcC-1]
+resources:
+  - {id: "svcA-1:exec-main", capacity: 1}
+  - {id: "svcB-1:exec-main", capacity: 1}
+  - {id: "svcC-1:exec-main", capacity: 1}
+events:
+  # Driver launches I1 into A.
+  - {at_ms: 0,   instance: driver-1, type: rpc.invocation.sent, invocation: I1, caller_execution: "", target: svcA-1}
+  # A: I1 arrives, takes the only slot, calls B (I2) and blocks.
+  - {at_ms: 5,   instance: svcA-1, type: rpc.invocation.arrived, invocation: I1}
+  - {at_ms: 6,   instance: svcA-1, type: resource.acquire, execution: "svcA-1:2", resource_instance: "svcA-1:exec-main:slot-0", invocation: I1}
+  - {at_ms: 10,  instance: svcA-1, type: rpc.invocation.sent, invocation: I2, caller_execution: "svcA-1:2", target: svcB-1}
+  - {at_ms: 11,  instance: svcA-1, type: rpc.block.begin, execution: "svcA-1:2", invocation: I2}
+  # B: I2 arrives, takes the only slot, calls C (I3) and blocks.
+  - {at_ms: 15,  instance: svcB-1, type: rpc.invocation.arrived, invocation: I2}
+  - {at_ms: 16,  instance: svcB-1, type: resource.acquire, execution: "svcB-1:2", resource_instance: "svcB-1:exec-main:slot-0", invocation: I2}
+  - {at_ms: 20,  instance: svcB-1, type: rpc.invocation.sent, invocation: I3, caller_execution: "svcB-1:2", target: svcC-1}
+  - {at_ms: 21,  instance: svcB-1, type: rpc.block.begin, execution: "svcB-1:2", invocation: I3}
+  # C: I3 arrives, takes the only slot, calls back to A (I4) and blocks.
+  - {at_ms: 25,  instance: svcC-1, type: rpc.invocation.arrived, invocation: I3}
+  - {at_ms: 26,  instance: svcC-1, type: resource.acquire, execution: "svcC-1:2", resource_instance: "svcC-1:exec-main:slot-0", invocation: I3}
+  - {at_ms: 30,  instance: svcC-1, type: rpc.invocation.sent, invocation: I4, caller_execution: "svcC-1:2", target: svcA-1}
+  - {at_ms: 31,  instance: svcC-1, type: rpc.block.begin, execution: "svcC-1:2", invocation: I4}
+  # A: I4 arrives but slot-0 is held by svcA-1:2 -> queue entry. Cycle closed over slots.
+  - {at_ms: 35,  instance: svcA-1, type: rpc.invocation.arrived, invocation: I4}
+  - {at_ms: 36,  instance: svcA-1, type: resource.wait.begin, invocation: I4, resource: "svcA-1:exec-main"}
+  # Leases: each blocked execution asserts liveness past age threshold (500ms),
+  # renewing every 500ms out to 6s (> tau + slack). expiry = at + 1500 (factor 3).
+  - {at_ms: 511, instance: svcA-1, type: execution.lease, execution: "svcA-1:2", start_ref: "svcA-1:2", observed_age_ms: 505, lease_expiry_ms: 2011,
+     repeat: {every_ms: 500, until_ms: 6000}}
+  - {at_ms: 521, instance: svcB-1, type: execution.lease, execution: "svcB-1:2", start_ref: "svcB-1:2", observed_age_ms: 505, lease_expiry_ms: 2021,
+     repeat: {every_ms: 500, until_ms: 6000}}
+  - {at_ms: 531, instance: svcC-1, type: execution.lease, execution: "svcC-1:2", start_ref: "svcC-1:2", observed_age_ms: 505, lease_expiry_ms: 2031,
+     repeat: {every_ms: 500, until_ms: 6000}}
+expect:
+  verdict: CONFIRMED_DEADLOCK
+  core_executions: ["svcA-1:2", "svcB-1:2", "svcC-1:2"]
+  core_units:
+    - "svcA-1:exec-main:slot-0"
+    - "svcB-1:exec-main:slot-0"
+    - "svcC-1:exec-main:slot-0"

@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Gradle / build
+.gradle/
+build/
+out/
+
+# Python (eval/)
+__pycache__/
+*.pyc
+.venv/
+
+# Proposal deck build outputs (source build_deck.py stays tracked)
+output/
+
+# Run artifacts
+*.log
+eval/results/
