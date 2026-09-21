@@ -1,9 +1,22 @@
 # SpanLease — Three-Developer Execution Plan
 
 Revision: 2026-09-19. Implements `requirements.md` and `design.md`.
-All tasks below are **planned**, not completed. A review document or a bootstrap CI
-pass is not implementation evidence. Dependencies are finish-to-start unless a row
+Except for the artifact status below, tasks are **planned**, not completed. A review
+document or a bootstrap CI pass is not detector implementation evidence.
+Dependencies are finish-to-start unless a row
 explicitly permits a draft handoff.
+
+### Dev A artifact handoff — 2026-09-21
+
+- **A-BOOT:** implemented and locally verified on Java 21 (`./gradlew clean build`);
+  six test cases, including 100 seeded property checks, passed. Remote CI/team review
+  remain pending. Evidence is recorded in `docs/bootstrap-verification.md`.
+- **A-SPEC:** `docs/scenario-truth-spec.md` authored; B lifecycle and C truth/clock
+  review are pending. No reviewer acceptance has been invented.
+- **B-FEAS:** consumes these artifacts after review/acceptance and availability in
+  the consumer checkout. This change does not implement B's gate or interfaces.
+- **G0:** still pending all listed prerequisites and A/B/C sign-off. Frozen proto
+  and historical v1 replay fixtures are unchanged.
 
 ## 1. Ownership and working rules
 

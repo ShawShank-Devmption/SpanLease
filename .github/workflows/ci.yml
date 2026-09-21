@@ -15,19 +15,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      # Guard: repo bootstrap phase (T0.1) may land docs before the Gradle wrapper exists.
       - name: Build, format check, unit + property tests
-        run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew build
-          else
-            echo "No gradlew yet (bootstrap phase) — skipping build"
-          fi
-      # Litmus tests (design.md §10) run once the integrationTest task exists (phase 3+).
-      - name: Integration litmus tests
-        run: |
-          if [ -x ./gradlew ] && ./gradlew tasks --all | grep -q integrationTest; then
-            ./gradlew integrationTest
-          else
-            echo "No integrationTest task yet — skipping"
-          fi
+        run: ./gradlew --no-daemon build
+      # I-CI adds mandatory integrationTest execution with the real detector litmus suite.
+      # A-BOOT's loopback compatibility test is part of test, not that litmus suite.

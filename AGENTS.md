@@ -92,18 +92,24 @@ change and counterexample rather than guessing an implementation.
 
 ## Tests and build
 
-After A-BOOT supplies the build:
+Bootstrap build and compatibility tests:
 
 ```bash
 ./gradlew build
 ./gradlew :analyzer:test
-./gradlew integrationTest
+./gradlew :testbed:test
 ```
 
 Run checks relevant to the change; format Java with google-java-format. Do not claim
 tests passed if CI skipped them or no wrapper exists. Each touched R1–R16 row requires
 its targeted test in the same implementation change. Use latches/barriers/virtual time,
 never sleeps-for-sync. Independent oracles must not reuse production reducer logic.
+
+Read `docs/scenario-truth-spec.md` for the A-SPEC lifecycle/truth handoff and its
+pending acceptance status. Bootstrap tests are not detector correctness tests.
+`./gradlew integrationTest` becomes mandatory when I-CI adds the real litmus suite;
+do not create a no-op task to imply that suite exists. See README.md for toolchain
+setup and `docs/bootstrap-verification.md` for actual verification evidence.
 
 Two real integration litmus tests are mandatory after G2:
 1. Deterministic closed wait → CONFIRMED_DEADLOCK with exact expected evidence set.

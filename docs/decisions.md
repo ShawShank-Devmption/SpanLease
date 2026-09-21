@@ -80,3 +80,20 @@ system/truth/runs, B instrumentation/telemetry/packaging, C analyzer/proof/stati
 Replaced provisional week estimates with prerequisites, accepted handoff artifacts and
 G0–G3 gates. *Why:* reduce blocked work and prevent consumers implementing guessed
 interfaces. *Affects:* tasks.md and AGENTS.md; former task IDs are historical.
+
+**D11 | 2026-09-21 | A-BOOT is build compatibility, not runtime feasibility.** Add five
+Java subprojects, catalog-pinned Gradle wrapper/checksum, Java 21 toolchain,
+protobuf/grpc generation, formatting, real JUnit/jqwik tests and classpath boundary
+checks. `eval` remains a script workspace. Use grpc generator `@generated=omit` to
+avoid a legacy annotation dependency; explicitly pin the test-only JUnit Platform
+launcher. CI runs build unconditionally; I-CI will add real integrationTest rather
+than a no-op task. *Why:* provide executable producer prerequisites without inventing
+B's APIs or implying G0/G2 acceptance. *Affects:* build/catalog/CI, design §2, README.
+
+**D12 | 2026-09-21 | A-SPEC delivered as reviewable behavioral handoff.** Added
+scenario/truth lifecycle, independent identities, onset/latency bounds, exact example
+residuals and bare/instrumented equivalence. Proto post_hold remains before reply;
+response-before-exit uses a separate diagnostic lifecycle hook. B/C review is pending,
+not fabricated. No event/report/proto/replay wire change. *Why:* consumers need explicit
+physical semantics and truth independence before proposing production interfaces.
+*Affects:* docs/scenario-truth-spec.md, design §6.4, tasks.md, AGENTS.md.

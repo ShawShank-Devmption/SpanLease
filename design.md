@@ -48,9 +48,14 @@ not “latest” claims. Python evaluation dependencies must also be pinned when
 | `eval` | A runs; C statistics; B packaging | Fault schedules, manifest, observations/truth joining, figures and reproduction |
 | `docs` | all | Decisions, proof/validation notes and source-backed literature |
 
-Repo root is Gradle root. No Java implementation/wrapper exists at this revision.
-`./gradlew build` and `./gradlew integrationTest` become acceptance commands after
-A-BOOT. Bootstrap CI guards must not be mistaken for executed tests.
+Repo root is Gradle root. A-BOOT supplies five Java subprojects, the Gradle wrapper,
+frozen-proto compilation and library compatibility tests; see README.md. `eval`
+remains the later script workspace, not an empty Java module. Production detector
+types and runtime components are not part of bootstrap. `./gradlew build` checks
+formatting, tests and production dependency boundaries. `integrationTest` is added
+by I-CI with the real detector litmus suite, not a successful no-op bootstrap task.
+The protobuf generator omits its legacy Generated annotation rather than adding a
+javax.annotation dependency; JUnit Platform launcher is explicit test-runtime support.
 
 ## 3. Identities and local state
 
@@ -389,6 +394,11 @@ Loopback is the default experiment endpoint; remote experiments use authenticate
 Do not expose an unauthenticated ingestion/admin service publicly.
 
 ### 6.4 Independent ground truth
+
+The detailed A-SPEC handoff is `docs/scenario-truth-spec.md`; its review status is
+recorded there. It defines lifecycle boundaries, truth identity, clock/onset bounds,
+scenario residuals and bare/instrumented equivalence without introducing Java APIs
+or approving the pending v2 observation contract.
 
 A owns a separate recorder observing gate transitions and handler call boundaries,
 including actual worker exit, without consuming SpanLease events, sequence IDs or
