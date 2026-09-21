@@ -1,214 +1,167 @@
-# SpanLease — Requirements & Project Context
+# SpanLease — Requirements
 
-> **Purpose of this file:** shared context for every developer and every LLM working on this
-> project. Read this before `design.md` and `tasks.md`. It states *what* we are building and
-> *why*; `design.md` states *how*; `tasks.md` states *who does what, in what order*.
+Revision: 2026-09-19, publication-oriented implementation baseline.
 
----
+## 1. Status and document authority
 
-## 1. One-paragraph summary
+SpanLease is a research project, not a validated detector. This revision resolves the
+specification defects identified in `docs/technical-review.md`. Requirements state
+what must hold; `design.md` defines the proposed implementation; `tasks.md` assigns
+ordered work to three developers; `AGENTS.md` governs contributions.
 
-**SpanLease** is an OpenTelemetry-compatible runtime monitor for synchronous Java/gRPC
-services that use explicitly configured **bounded executors**. It emits ten custom event
-types (invocation dispatch/arrival, queue entry, executor-slot acquire/release,
-blocking-wait boundaries, renewable liveness leases, cancellation, termination),
-reconstructs a **causally consistent, capacity-aware wait-for graph**, and **localizes
-persistent circular waits (distributed deadlocks) before RPC deadlines fire**. When the
-observations do not justify confirmation, it returns an explicit inconclusive verdict
-instead of guessing.
+The revision-2 proposal PDF remains the historical research motivation. Where its
+semantics conflict with this explicitly revised baseline, the changes are recorded in
+`docs/decisions.md`; do not reintroduce those defects. The revised event/report contract
+is **version 2, pending the all-developer contract review G0**. Documentation is ready
+for that review; this does not assert approval, a completed implementation, or proofs.
+Existing v1 replay files remain historical fixtures until migrated at G0.
 
-This is a research systems project (target venues: ACM Middleware, ICPE, IEEE IC2E). The
-source of truth for all claims and semantics is `SpanLease_Research_Proposal_r2.pdf` in
-this repo. Nothing below overrides that document; this file condenses it.
+## 2. Objective and bounded contribution
 
-## 2. The problem
+Localize persistent circular waits involving synchronous RPCs and bounded application
+executor capacity before RPC deadlines, using OpenTelemetry-compatible **custom
+telemetry**. Return explicit missing-evidence explanations when confirmation cannot be
+justified. A verdict concerns a certified historical interval, not guaranteed current
+state or safe remediation.
 
-Microservice systems built on synchronous RPC can enter **persistent circular waits** that
-involve both in-flight RPC executions and bounded executor capacity:
+The intended contribution is an evidence protocol, implementation and evaluation for
+this setting. Distributed deadlock detection, capacity reduction, consistent cuts,
+leases and live spans are prior art. Novelty must be supported by the comparisons in
+`docs/literature-review.md`, particularly DDMon and enriched live spans.
 
-- Service A's handler (holding a slot in A's executor) makes a blocking call to B.
-- B's handlers (holding all of B's slots) block on calls to C.
-- C's handler blocks on a call back to A — but A's slot is held by the first handler.
-- The cycle is permanent: no member can progress without external intervention.
+Distinguish slow progress, saturation without circularity, and closed circular waiting.
+For a queued request eligible for any slot in its selected pool, closure requires every
+slot of that pool to be owned within the blocked set. Other pools can have spare slots.
+Deadlines/cancellation can break a circular wait: do not describe finite-deadline RPC
+waits as necessarily permanent deadlocks.
 
-Two evidence classes exist while this persists, and **neither is sufficient**:
+## 3. Supported deployment
 
-| Evidence | Timing | Limitation |
+- Java 21; blocking unary grpc-java client stubs; one outstanding downstream RPC per
+  executing handler. No async/streaming/virtual-thread/actor claim.
+- Explicit application admission gate with k fixed worker slots per service instance.
+  gRPC transport/callback execution is separate from this monitored worker pool.
+  The generated service adapter submits one unary handler job to the gate and returns
+  promptly; the job can invoke downstream blocking stubs while retaining its slot.
+- Instrumentation begins before application admission opens. Instances and pools are
+  declared in an immutable run manifest. Mid-run attachment, resizing, and dynamic
+  membership require a new epoch and are not supported in the first implementation.
+- Invocation binding is to the selected instance. A free slot on a different replica
+  does not satisfy a request already queued here. No implicit rerouting.
+- Sequential application retries create new invocation IDs. Disable transparent retries
+  and hedging in measured channels. Concurrent alternatives are unsupported.
+- A logical blocking boundary surrounds the blocking-stub invocation, including its
+  dispatch and return. It is not a claim to observe a JVM thread's physical park.
+- An application span begins only after gate admission. Transport spans may exist
+  earlier; “queued without a span” means without an application execution span.
+
+This is an explicit deployment restriction, not transparent monitoring of arbitrary
+`ServerBuilder.executor` configurations. Early transport arrival alone does not mean
+the full unary request is ready for application admission.
+
+## 4. Assumptions and limits
+
+| ID | Assumption for confirmation | Consequence when unavailable |
 |---|---|---|
-| Completed spans (conventional tracing) | Arrive **on span end** — i.e., only after the stalled calls hit their deadlines | Full request identity, but outside the intervention window |
-| Aggregate executor/in-flight metrics | Continuous | Counts and occupancy only — cannot name *which* execution holds *which* slot, or which invocation waits on which execution |
+| A1 | Manifest enumerates all participating instances, pools and eligible slots; relevant application dependencies use the supported gate/RPC model | Known missing instrumentation → INSUFFICIENT_OBSERVABILITY; hidden undeclared dependencies are outside the guarantee |
+| A2 | Invocation and causal references are unique, correct and propagated; instrumentation reflects actual local transitions | Detected identity/state violation invalidates affected evidence; undetected instrumentation bugs are outside the guarantee |
+| A3 | Required observations, including closure and checkpoint records, arrive within Δ in guarantee experiments; all allocated sequence positions through a checkpoint are received | Missing prefix/suffix evidence prevents confirmation; Δ is not itself proof of completeness |
+| A4 | Timestamp error is at most ε relative to the run's agreed time reference for the evaluated interval; local durations use monotonic time | Known loss of clock qualification prevents confirmation; arbitrary undetected skew/drift has no guarantee |
+| A5 | Capacity, eligible-unit membership and instance epoch are stable; startup free state is observed before admission | Unknown state remains UNKNOWN, never inferred free or held |
+| A6 | State+sequence instrumentation is correct; the priority pipeline's bounded nonblocking offers preserve allocated sequence numbers even when records are dropped | Drops cause uncertifiable prefixes; leases do not repair missing terminal events |
 
-SpanLease fills the gap: **live, request- and slot-level evidence, before the deadline**.
+Clock qualification and deployment configuration are recorded run evidence, not values
+invented by the analyzer. Fault tests outside assumptions characterize behavior; they
+cannot establish that every unobservable violation will be detected.
 
-### Three conditions that must never be conflated
+## 5. Required observations
 
-1. **Slow request** — making progress, just late. Resolves on its own. Cancelling destroys work.
-2. **Executor saturation** — all slots busy, arrivals queue. Evidence of *pressure*, not deadlock. May resolve when any owner completes.
-3. **Persistent circular wait** — every member blocked, every satisfying capacity unit held *inside* the set. Does not resolve without intervention. **This is the only target condition.**
+Every record has a process-epoch identity, local sequence, schema version, causal
+reference where applicable and physical timestamp. The full v2 field table is design
+§4. Per-instance order comes from sequence numbers; cross-instance order comes from
+explicit message references. Time is used for evidence freshness/persistence only.
 
-Saturation and circular waiting are neither necessary nor sufficient for each other. A
-detector keyed on saturation produces false positives (saturated but progressing) and false
-negatives (cycle among partially-occupied executors). This distinction drives the entire
-design: the predicate is over **individual capacity units (slots)**, not services.
+Ten original lifecycle families are retained with clarified semantics: invocation sent
+and arrived, resource wait/acquire/release, RPC block begin/end, execution lease/end/
+cancel. Version 2 adds `resource.init`, `instance.checkpoint`, and `rpc.response.sent`.
+These supply initial state, complete-prefix evidence, and response causality missing
+from v1. Checkpoints continue even when no handler is running. Export is unsampled and
+separate from ordinary trace sampling; ordinary spans never fill missing detector facts.
 
-## 3. Scope — the setting we claim
+Cancellation is an observation of requested cancellation, not proof of task exit.
+`execution.end` records actual handler-job termination for all outcomes, and release
+follows actual termination. A response may precede handler termination/slot release.
 
-- **Synchronous blocking unary gRPC**, Java client and server, generated blocking stubs.
-- Servers with an **explicitly bounded executor** whose capacity and slot identities are
-  known to the instrumentation.
-- **AND-wait semantics**: a blocked execution needs exactly its one outstanding response;
-  nothing else unblocks it.
-- Trace/invocation context propagated correctly on every hop.
+## 6. Domain entities
 
-**External validity, stated honestly:** default gRPC Java deployments do *not* necessarily
-match this (executors may be unbounded/cached). Our claims apply to deployments configured
-as above, and the evaluation must report that as a generalisability restriction.
+| Entity | Meaning |
+|---|---|
+| Instance | One process epoch, with one ordered event stream |
+| Invocation | One unary call attempt, same ID at client/server |
+| Execution | One admitted handler job, created when a slot is assigned |
+| Queue entry | Ready unary handler job awaiting a slot, no execution yet |
+| Resource / unit | Selected instance's fixed pool / one named worker slot |
+| Ownership | Observed acquire until observed release; never removed merely because a lease expires |
+| Wait | Logical blocking RPC interval or queued admission interval |
+| Lease | Fresh observation of the current blocking state; expiry bounds eligibility, not future lifetime |
+| Checkpoint | An instance-local state-serialization boundary certifying a complete prefix only if every earlier sequence is delivered |
+| Consistent cut | Vector of local prefixes closed under every included causal parent |
+| Evidence set | Closed surviving blocked set and its witnessing slots/edges; may include dependents and multiple cycles; no irreducibility claim |
 
-## 4. Assumptions (A1–A6) — memorize these
+## 7. Predicate and verdicts
 
-| ID | Assumption | If violated |
-|----|-----------|-------------|
-| A1 | Instrumented resources only: every capacity unit in a confirmable cycle emits acquire/release events | Cycle through an uninstrumented lock/pool/broker cannot be confirmed → analyzer **must degrade to inconclusive**, never assume absence |
-| A2 | Context propagation correct; invocation identity stable end-to-end | Wait edges cannot be attributed; verdicts unsound. Partially detectable via coverage accounting |
-| A3 | Priority-channel events may be delayed, reordered, duplicated — but delivery delay for confirmation-relevant events is bounded by **Δ** | Confirmation withdrawn; only inconclusive verdicts permitted |
-| A4 | Physical clock skew between hosts bounded by **ε**; physical time used *only* for persistence thresholds, never for cross-host ordering | Persistence intervals widen by 2ε; ordering unaffected (it rests on causal relations) |
-| A5 | Executor capacity and slot identity observable and stable within an evaluation window | Capacity-aware predicate unevaluable → inconclusive |
-| A6 | Instrumentation does not itself drop terminal events under load | Held-forever ownership would be inferred from missing releases. Mitigated (not eliminated) by lease expiry |
-
-## 5. Non-goals
-
-- No claims for reactive, async, streaming, actor-based, or virtual-thread systems.
-- No soundness claims under arbitrary event loss, unbounded delay, or unsynchronized clocks.
-- No detection of livelock, starvation-without-circularity, or application-level logical
-  dependencies not represented by an observed wait.
-- **No remediation policy.** SpanLease produces evidence; acting on it (cancelling work) is
-  a separate problem with separate correctness requirements. A confirmed verdict is *not* a
-  licence to cancel.
-- No claim of operating on *standard* OpenTelemetry telemetry alone. SpanLease rides
-  standard OTel APIs/transport (W3C context propagation, logs data model, OTLP) but defines
-  **custom event schemas** — always described as "OpenTelemetry-compatible custom telemetry".
-
-## 6. Core entities (domain vocabulary — use these names in code)
-
-| Entity | Identity | Meaning |
-|---|---|---|
-| Service instance | `instance_id` | A single addressable process with its own local event sequence |
-| RPC invocation | `invocation_id` | A logical downstream call; generated at the client, propagated in request metadata; **same id at both endpoints** |
-| Execution | `execution_id` | Server-side resource-holding entity, created when an invocation is assigned a capacity unit. **Not the same as a span** |
-| Queue entry | — | An arrived invocation not yet assigned a unit. Has arrival + wait events but no `execution_id` and **no application span** (invisible to span-based instrumentation — a key reason the event contract starts before span creation) |
-| Resource type | `resource_id` | A bounded executor/pool with declared capacity k |
-| Resource instance | `resource_instance_id` | One capacity unit, e.g. `svcB:exec-main:slot-2`. Modelling *units* (not types) makes the predicate correct for k > 1 |
-| Wait edge | — | Observed blocking dependency: execution→invocation, or queue-entry→resource-type |
-| Ownership edge | — | Resource instance held by an execution (acquire with no causally later release) |
-| Lease | — | Liveness assertion bounding the *staleness* of an ownership/wait claim. Does not by itself prevent phantom cycles — only causal-consistency does |
-| Observation | — | An event record that may be delayed, reordered, duplicated, or lost. **The analyzer's input is observations, never system state** |
-| Candidate global state | — | A set of per-instance local states forming a **consistent cut** under the causal precedence relation |
-
-## 7. The event contract (10 event types)
-
-Emitted on a dedicated **priority channel** exempt from trace sampling. Ordinary trace
-sampling is *not* the detector's input model; sampled completed spans are supplementary
-operator context only, never verdict input.
-
-| Event | Emitted by / when | Key fields |
-|---|---|---|
-| `rpc.invocation.sent` | Client interceptor, at dispatch of a blocking unary call | invocation_id, caller execution_id, target service |
-| `rpc.invocation.arrived` | **Server transport interceptor, on receipt — before any executor assignment or application span** | invocation_id, arrival local_seq |
-| `resource.wait.begin` | Server, when an arrived invocation queues because no unit is free | invocation_id, resource_id, requested capacity semantics |
-| `resource.acquire` | Server, when a unit is assigned. **Creates the execution** | execution_id, resource_instance_id, invocation_id |
-| `rpc.block.begin` | Client interceptor within a server execution, when the calling thread parks | execution_id, invocation_id (the awaited call) |
-| `execution.lease` | Background scanner: after an age threshold, then at a renewal interval, while an execution stays blocked | execution_id, original start reference, observed age, expiry |
-| `rpc.block.end` | Client interceptor, on response, error, or deadline | execution_id, invocation_id, outcome |
-| `resource.release` | Server, when a unit returns to the pool | execution_id, resource_instance_id |
-| `execution.end` | Server, on normal termination | execution_id, outcome |
-| `execution.cancel` | Server or client, on cancellation or deadline propagation | execution_id, invocation_id, cancellation source |
-
-Common schema fields on **every** event: `schema_version`, `event_type`, `instance_id`,
-`local_seq` (monotonic per instance — **local order only**, never a cross-host ordering
-device), `causal_parent`, `trace_id`/`span_id` (correlation for operators), `wall_time`
-(persistence thresholds only), plus the identity fields above; `lease_expiry` on lease
-events. Duplicates are idempotent by `(instance_id, local_seq)`.
-
-**Design correction to respect:** the lease record produced after an age threshold is *not*
-a start event. Arrival and acquire events are emitted immediately (they are cheap);
-`execution.lease` explicitly carries the original start reference and observed age so the
-analyzer never infers a start time from a delayed record's arrival time.
-
-## 8. Verdicts (four-valued lattice)
-
-Verdicts differ by **what the evidence establishes**, not by degree of confidence:
+A nonempty set S qualifies only if all its executions are observed blocked, all queue
+entries are observed waiting, every blocked execution's counterpart belongs to S, and
+every eligible slot of every queued member's pool is held by an execution in S. Those
+same dependencies must hold without interruption for a guaranteed overlap of at least
+τ. The set is evaluated at a consistent cut with complete evidence and qualified clocks.
 
 | Verdict | Meaning |
 |---|---|
-| `CONFIRMED_DEADLOCK` | A confirmed terminal set exists at a candidate global state; all predicate conditions C1–C6 hold; coverage over participating resource types is complete under A1–A6 |
-| `CONFIRMED_NO_DEADLOCK` | For the queried cut/window, iterative reduction empties the candidate set — the predicate is **refuted**, not merely unestablished |
-| `CANDIDATE_INCONCLUSIVE` | A non-empty blocked set survives reduction, but a required observation is missing/late/attributable to an unobserved unit, or persistence hasn't reached τ. Actionable: the report names the missing item |
-| `INSUFFICIENT_OBSERVABILITY` | Predicate not evaluable at all (uninstrumented participating resource, broken propagation). A configuration defect, not a transient gap |
+| CONFIRMED_DEADLOCK | A covered closed evidence set satisfies the predicate throughout the reported interval |
+| CONFIRMED_NO_DEADLOCK | Complete evidence for the declared query scope at the reported cut permits observed-progress reduction to empty the candidate set; not a whole-run or future guarantee |
+| CANDIDATE_INCONCLUSIVE | Transient missing/late/expired evidence, uncertainty, or insufficient persistence prevents confirmation; a reconstructible cycle is not required |
+| INSUFFICIENT_OBSERVABILITY | Known unsupported configuration, absent instrumentation, or invalid identity contract makes the predicate unevaluable |
 
-Every verdict ships with a **coverage report** (which resource types were instrumented,
-which units had observed ownership, which hops carried propagated identity, which
-observations were outstanding). Coverage is a first-class output.
+Both confirmed verdicts require complete evidence for the declared scope in v2's first
+implementation. Unknown counterparts, unseen slots and expired evidence never count
+as progress. Report the exact missing items. The two confirmed labels are incomparable;
+this is an information ordering, not a claimed four-element mathematical lattice.
 
-**Detection confidence ≠ remediation safety.** A confirmed verdict establishes the
-predicate held at some consistent cut in the persistence interval — not that it still
-holds now, nor that cancelling any member is safe or correct.
+Every report includes schema version, immutable manifest identity, evaluation context,
+query scope/cut, certified horizon, persistence interval when applicable, evidence set,
+coverage and missing-evidence reasons. Detection confidence is not remediation safety.
 
-## 9. Correctness obligations (to be proved, not assumed)
+## 8. Correctness obligations
 
-- **S1 (safety):** `CONFIRMED_DEADLOCK` over a reported core and persistence interval ⇒
-  under A1–A6 there exists a causally consistent cut within that interval at which the
-  capacity-aware predicate holds over the reported core.
-- **L1 (conditional liveness):** a qualifying deadlock persisting longer than τ + Δ + 2ε,
-  with all required observations delivered within Δ ⇒ SpanLease eventually reports
-  `CONFIRMED_DEADLOCK` over a core contained in the true deadlocked set.
+- S1: under A1–A6, a positive verdict witnesses the stated predicate for its reported
+  evidence set and guaranteed interval at a causally consistent cut.
+- S2: under A1–A6, a negative verdict refutes the closed-wait predicate for the complete
+  declared query scope at its cut. It does not rule out a different historical cut.
+- L1: a qualifying wait that remains present through collection and evaluation is
+  eventually reported if observations/checkpoints are delivered, clocks remain
+  qualified, and the analyzer is scheduled fairly. A finite implementation bound must
+  include scan, checkpoint, delivery, processing and evaluation delays (design §5.7).
+- Reduction terminates, is independent of worklist order, and never uses unknown state
+  to discharge a member. Replay is deterministic for identical manifest, observation
+  envelopes, evaluation times and configuration.
 
-No soundness claim appears anywhere before proofs exist. Interim framing: "designed to
-satisfy S1 and L1 under the stated assumptions."
+These remain obligations until proved. Use “designed to satisfy under A1–A6,” not a
+soundness claim. Bounded model checking and zero observed errors do not constitute proof.
 
-## 10. Deliverables (project outputs)
+## 9. Required deliverables and acceptance
 
-1. **Bounded-executor gRPC testbed** — three Java services, fixed-capacity executors with
-   visible slot identity, deterministic deadlock trigger, and an **independent ground-truth
-   recorder** producing request- and slot-level truth.
-2. **Instrumentation library** — interceptors + slot-tracking executor + lease scanner +
-   priority OTLP channel, emitting the 10-event contract.
-3. **Analyzer** — consistent-cut construction, capacity-aware graph, iterative reduction,
-   coverage accounting, four-valued verdicts, evidence-core reports.
-4. **Baselines & ablations** — metrics-only saturation detector; completed-trace/post-timeout
-   diagnosis; in-progress-spans feeding the *same* analyzer (the strongest baseline);
-   Cheriton–Skeen-style RPC wait-for monitor; DDMon-inspired observer; triggered-tracing
-   buffering; plus capacity-unaware, lease-free, and causality-free ablations.
-5. **Evaluation & reproducibility package** — workload/fault matrix runs, metrics with
-   confidence intervals, seeds, scripts; every reported figure reproducible on a fresh
-   environment.
-
-## 11. Success criteria (what "working" means)
-
-- The testbed deadlocks **on demand** and ground truth identifies the exact executions and
-  units involved, independently of any SpanLease event (P0 exit criterion).
-- A queued invocation is observable while it has no execution and no application span
-  (P1 exit criterion — the primary integration risk).
-- Reconstructed slot occupancy matches the executor's own accounting for the whole run (P2).
-- Client wait edges join server counterparts on `invocation_id` with no unmatched edges
-  under nominal conditions (P3).
-- Analyzer reproduces ground truth on the testbed and returns `CONFIRMED_NO_DEADLOCK` for
-  cyclic call patterns with spare capacity (P5 — the capacity-awareness litmus test).
-- Under fault injection (loss, delay, reordering, duplication, skew, crashes, partitions)
-  the system degrades to inconclusive verdicts — **it never confirms what evidence doesn't
-  support**.
-
-## 12. Glossary of parameters
-
-| Symbol | Meaning |
+| Deliverable | Acceptance evidence |
 |---|---|
-| τ (tau) | Persistence threshold — condition must hold this long before confirmation |
-| Δ (Delta) | Assumed bound on delivery delay for confirmation-relevant events |
-| ε (epsilon) | Assumed bound on physical clock skew between instrumented hosts |
-| k | Declared capacity of a bounded executor (number of slots) |
+| Real gRPC testbed and independent truth recorder | Deterministic trigger and truth naming exact jobs/slots without reading SpanLease events |
+| Admission and transport instrumentation | Queued job visible before execution; reconstructed occupancy matches actual gate state; caller/server joins complete |
+| Complete-prefix telemetry protocol | Startup/idle checkpoints, loss/overflow/duplicates/restart and response-order tests |
+| Analyzer | S1/S2 argument, reducer oracle checks, conservative verdicts and deterministic replay |
+| Litmus integration | Deterministic closed wait → exact expected evidence set; fully observed spare-capacity cyclic pattern → CONFIRMED_NO_DEADLOCK |
+| Baselines | Metrics, completed traces, ordinary and equally enriched live spans, invocation monitor, documented DDMon adaptation, triggered buffering where feasible |
+| Evaluation | k/length/replica/load/deadline sweeps; adversarial negatives; at least one independently sourced supported workload; overhead and confidence intervals |
+| Reproduction and manuscript | Pinned build, seeds, raw observations/truth, scripts, proof status and source-backed claims |
 
-## 13. Reading order for a new contributor (human or LLM)
-
-1. This file.
-2. `design.md` — architecture, module boundaries, algorithms, concurrency rules, testing.
-3. `tasks.md` — your phase, your tasks, the shared LLM system prompt.
-4. `SpanLease_Research_Proposal_r2.pdf` — authoritative source for any ambiguity.
+No remediation, broad async support, invented missing observations, production-wide
+absence claims, or new framework is part of this scope. `tasks.md` makes the approval,
+implementation, proof and publication dependencies explicit.

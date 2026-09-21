@@ -43,3 +43,40 @@ fault scenarios and Dev C's tests. *Affects:* C1.1, golden replay tests, A2.2.
 lands). Repo initialized locally; the team creates the remote and pushes at kickoff —
 remote URL to be appended here as D7 when created. *Affects:* tasks.md working
 agreements.
+
+**D7 | 2026-09-19 | Specification and publication review recorded; frozen contracts
+unchanged.** Added literature review, requirements traceability/counterexamples and
+proposed semantic amendments in `docs/`. Corrected gRPC interception and OTLP overload
+guidance; added feasibility, completeness, proof, baseline and publication gates to
+design/tasks. Proposal conflicts are marked unresolved, not silently adopted. Event
+and verdict tables, proto and replay schema remain unchanged; no new dependencies or
+schema-version bump. *Why:* current design can mistake absent evidence for progress,
+does not establish completeness/persistence, and overclaims core irreducibility.
+*Affects:* design §§5–6,9–10; tasks phase-0 gates and acceptance criteria. This entry
+supersedes D6's reservation of identifier D7 only; the remote URL is still unrecorded.
+
+**D8 | 2026-09-19 | User-requested final documentation baseline supersedes proposal-r2
+defects explicitly.** Rewrote requirements/design/tasks and AGENTS, leaving CLAUDE.md
+unchanged as requested. Adopted an explicit application worker gate separate from gRPC
+callbacks; logical blocking-helper boundaries; qualified reference-clock intervals;
+complete-prefix startup/checkpoint protocol; response causality; cancellation distinct
+from actual exit; residual evidence-set semantics; S2 and conditional L1. The proposal
+PDF and earlier reviews are historical motivation/rationale, not overrides of the new
+baseline. *Why:* the user requested consistent final implementation documents after
+the review rather than contradictory historical algorithms with warning notes.
+*Affects:* requirements.md, design.md, tasks.md, AGENTS.md.
+
+**D9 | 2026-09-19 | Contract v2 documented as review candidate, not silently frozen.**
+Design specifies thirteen record types (ten revised lifecycle records plus resource.init,
+instance.checkpoint and rpc.response.sent), reference/monotonic timestamps, manifest/
+envelopes and revised verdict JSON. Added explicit approval gate G0 and v1 replay
+migration task; all-developer sign-off is not yet recorded. Existing proto, catalog,
+replay schema/example and runtime files are unchanged. *Why:* finalizing the proposed
+documents does not fabricate the three developers' required contract approval.
+*Affects:* design §§4/8; B-CONTRACT, C-CONTRACT and G0 in tasks.md.
+
+**D10 | 2026-09-19 | Three accountable lanes with explicit dependency graph.** A owns
+system/truth/runs, B instrumentation/telemetry/packaging, C analyzer/proof/statistics.
+Replaced provisional week estimates with prerequisites, accepted handoff artifacts and
+G0–G3 gates. *Why:* reduce blocked work and prevent consumers implementing guessed
+interfaces. *Affects:* tasks.md and AGENTS.md; former task IDs are historical.

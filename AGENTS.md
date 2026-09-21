@@ -1,67 +1,131 @@
-# AGENTS.md — instructions for coding agents (Codex, Claude, etc.)
+# AGENTS.md — SpanLease contribution instructions
 
-SpanLease: an OpenTelemetry-compatible runtime monitor that detects and localizes
-distributed deadlocks (persistent circular waits across RPCs + bounded executor slots)
-in Java/gRPC services, **before** RPC deadlines fire.
+SpanLease investigates pre-deadline localization of persistent circular waits across
+blocking Java/gRPC calls and explicit bounded application worker slots, using
+OpenTelemetry-compatible **custom telemetry**. It is a research prototype under
+development; do not claim implemented results, novelty, soundness or timing guarantees
+without their evidence.
 
-## Read first, in this order
-1. `requirements.md` — domain, scope, assumptions A1–A6, event contract, verdicts.
-2. `design.md` — architecture, module layout, algorithms, invariants I1–I5, race matrix
-   R1–R16, wire contract (§4), verdict JSON (§8), testing (§10).
-3. `tasks.md` — your task, your lane (Dev A/B/C), working agreements, and the canonical
-   LLM system prompt (follow it even if it wasn't pasted into your session).
-4. `docs/decisions.md` — append-only log of resolved ambiguities. Check it before
-   "fixing" code that seems to deviate from the docs; append an entry (same PR) whenever
-   you resolve an ambiguity or change a contract.
-5. `SpanLease_Research_Proposal_r2.pdf` — ultimate authority on semantics and claims.
+## Read before work
 
-## Stack (fixed)
-Java 21 · Gradle (Kotlin DSL) · grpc-java **blocking stubs only** · OpenTelemetry SDK
-(events = LogRecords over OTLP) · JUnit 5 + AssertJ + jqwik · Jackson · google-java-format.
-Versions come only from `gradle/libs.versions.toml` — never write a version literal in a
-build file. No Spring, no Lombok, no Guava, no new dependencies without a `design.md`
-change PR. Parameter defaults (τ, Δ, ε, lease intervals, …) are fixed in `design.md` §4.1.
+1. `requirements.md` — current scope, A1–A6, predicate, verdicts and obligations.
+2. `design.md` — runtime architecture, proposed v2 contracts, interval/cut algorithms,
+   invariants I1–I5, race rows R1–R16 and verification.
+3. `tasks.md` — assigned owner, prerequisite task IDs, handoffs and gates G0–G3.
+4. `docs/decisions.md` — append-only history; check superseding entries.
+5. `docs/literature-review.md` for research/claim changes. The technical review and
+   amendment documents preserve rationale and review history.
 
-## Build & test
+The 2026-09-19 revised requirements/design are the current implementation baseline;
+the revision-2 proposal PDF is historical motivation, not authority to restore a
+superseded defect. The revised event/report contract is **v2 pending G0 all-developer
+sign-off**. Do not assert that approval exists or silently mix old v1 replay fixtures
+with new semantics. Later contract changes still require review and versioning.
+
+## Ownership and execution order
+
+- **Dev A:** build/CI, testbed/driver, independent truth, scenario/fault harness and runs.
+- **Dev B:** event DTOs, application gate, RPC integration, scanner/checkpoints/export,
+  instrumentation baselines and artifact packaging.
+- **Dev C:** report/replay DTOs, analyzer, correctness/oracle work, analyzer baselines,
+  statistics and manuscript coordination.
+
+Every implementation task has one accountable owner and explicit prerequisites in
+`tasks.md`. Work only on ready tasks; do not invent missing cross-lane interfaces.
+Contract/model discussions and isolated feasibility spikes may precede G0; production
+contract implementations may not. Handoff examples and tests are part of completion.
+Do not spawn/delegate agents unless the user explicitly requests it for the task.
+
+## Fixed stack and boundaries
+
+Java 21; Gradle Kotlin DSL; grpc-java **blocking unary client stubs**; OTel SDK LogRecords
+over OTLP; JUnit 5 + AssertJ + jqwik; Jackson; google-java-format. No Spring, Lombok,
+direct Guava use or unreviewed dependencies. Dependency versions belong in
+`gradle/libs.versions.toml`, never version literals in build files. Defaults are
+design §4.1. Existing catalog entries are pins to validate, not proof of compatibility.
+
+`common` contains transport-independent immutable DTOs/validation, with JDK/Jackson
+only. SDK encoding belongs in instrumentation; OTLP decoding belongs in analyzer.
+Analyzer must never depend on instrumentation/testbed or read independent truth.
+Truth-to-observation mapping belongs exclusively in the evaluation harness.
+
+## Semantics that must survive every change
+
+- One modeled execution is one admitted handler job. A gRPC callback Runnable is not
+  automatically an execution. Transport/callback executor and monitored application
+  gate are separate. Ordinary ServerInterceptor is not a pre-dispatch arrival hook.
+- Blocking events describe the helper's logical call interval, not physical JVM parks.
+  One outstanding downstream invocation per execution; retries use new identities;
+  transparent retries, hedging and other alternative waits are outside supported scope.
+- I1: local state transition, sequence allocation and publication attempt are serialized.
+  I2: acquire before run. I3: actual task exit/end before release.
+  I4: no telemetry queue-space/network/I/O waits on application paths; short state-lock
+  contention is allowed and measured. I5: metadata/causal references before send/close.
+- Cancellation request, response send/receive, helper return, task exit and slot release
+  are distinct. Cancellation alone never frees a still-running worker.
+- Init observes free slots before admission. Checkpoints certify only received
+  contiguous prefixes, including idle instances. Missing suffixes/gaps never disappear
+  because Δ elapsed; permanent loss blocks certification until a clean run.
+- Unknown state is neither free nor held. Expired leases do not remove ownership or
+  prove progress. Both confirmed verdicts require the declared scope's complete evidence.
+- Cross-host order comes from exact causal references, including response parents.
+  Local sequence/monotonic time never orders different hosts. Physical time supports
+  guaranteed interval overlap under qualified ε; it never invents causal edges.
+- Persistence comes from complete uninterrupted histories of the same dependencies,
+  not repeated evaluation ticks or unchanged node membership. Temporal pruning cannot
+  produce a negative verdict.
+- Report an evidence set/residual, not an irreducible/minimum root cause. A negative
+  verdict applies to its reported scope/cut; a positive verdict is historical evidence,
+  not authorization to cancel work.
+
+## Contracts and decisions
+
+Event/manifest/replay/report changes require a contract-tagged PR and all three
+developers' approval. Wire-visible changes bump schema_version and migrate fixtures
+explicitly. The v2 design in this revision is a **review candidate**, not an exception
+to that rule. Do not repurpose attributes or invent undocumented control observations.
+
+Append a decision in the same change whenever resolving ambiguity or changing a
+contract/architecture. Never rewrite prior decision entries; supersede them.
+If a task reveals a material unresolved semantic choice, supply a concrete proposed
+change and counterexample rather than guessing an implementation.
+
+## Tests and build
+
+After A-BOOT supplies the build:
+
 ```bash
-./gradlew build            # compile + format check + unit/property tests
-./gradlew :analyzer:test   # per-module
-./gradlew integrationTest  # end-to-end litmus tests (phase 3+)
+./gradlew build
+./gradlew :analyzer:test
+./gradlew integrationTest
 ```
-Code must be formatted with google-java-format; CI rejects unformatted code.
 
-## Non-negotiable rules
-- **Module boundaries:** `common` has no grpc/testbed deps. `analyzer` NEVER depends on
-  `instrumentation` or `testbed` — it consumes observations only. Ground truth never
-  flows through analyzer inputs.
-- **Frozen contracts:** event wire schema (`design.md` §4) and verdict JSON (§8). Changing
-  them requires a `contract`-tagged PR approved by all three devs + `schema_version` bump.
-- **Concurrency invariants (design.md §7):** state transition + `local_seq` assignment in
-  one critical section (I1); acquire before run (I2); release after terminal (I3);
-  instrumentation never blocks app threads (I4); metadata before send (I5). Analyzer core
-  is single-writer. Every race row R1–R16 you touch needs its targeted test in the same PR.
-- **Conservative-direction rule:** any ambiguity (missing event, expired lease, frontier
-  gap, unobserved unit, persistence < τ) ⇒ inconclusive verdict naming the missing item.
-  Never treat an unobserved unit as free or held. Both CONFIRMED verdicts need complete
-  observed evidence.
-- **Time discipline:** `local_seq` = local order only; cross-host order only via the
-  causal relation; `wall_time` only for persistence thresholds with ±ε narrowing.
-- **Determinism:** seeded RNG injected via constructor; no sleeps-for-sync in tests;
-  analyzer output is a pure function of the observation set.
-- **Litmus tests never break:** deterministic trigger ⇒ `CONFIRMED_DEADLOCK` with exact
-  core; spare-capacity cycle ⇒ `CONFIRMED_NO_DEADLOCK`.
-- **Terminology:** "OpenTelemetry-compatible **custom** telemetry", never "standard
-  telemetry". Never attribute executor-depth metrics to OTel RPC semantic conventions.
-  No soundness claims — S1/L1 are obligations, "designed to satisfy under A1–A6".
+Run checks relevant to the change; format Java with google-java-format. Do not claim
+tests passed if CI skipped them or no wrapper exists. Each touched R1–R16 row requires
+its targeted test in the same implementation change. Use latches/barriers/virtual time,
+never sleeps-for-sync. Independent oracles must not reuse production reducer logic.
 
-## Style
-- Package prefix `dev.spanlease.<module>`; one top-level class per file; records for
-  immutable data; explicit types in public signatures; Javadoc states invariants.
-- Comments only for non-obvious invariants, citing design sections ("// I1: seq under
-  slot lock") — never narration.
-- Tests ship in the same change as the code, at the smallest layer that can express the
-  behavior.
+Two real integration litmus tests are mandatory after G2:
+1. Deterministic closed wait → CONFIRMED_DEADLOCK with exact expected evidence set.
+2. Fully observed spare-capacity cyclic pattern → CONFIRMED_NO_DEADLOCK.
 
-## When unsure
-If a task is ambiguous, conflicts with `design.md`, or needs a contract change: stop and
-raise the question or propose the design diff. Do not improvise around the contract.
+Seed workload/fault RNGs and inject them through constructors. Production identity
+uniqueness is separate from deterministic test IDs. Deterministic replay fixes the
+manifest, received envelopes, query/evaluation times and configuration; event payloads
+alone do not determine receipt-time gap ages or freshness.
+
+## Code and research style
+
+Package prefix `dev.spanlease.<module>`; one top-level class per file; immutable data
+as records; explicit public signature types. Javadoc states invariants. Comments explain
+non-obvious decisions/invariants rather than narrating code. Keep the implementation
+small, at the responsible layer, without speculative services/frameworks.
+
+No “standard telemetry” description of detector inputs. Executor depth is custom/JMX
+data, not attributed to RPC semantic conventions. No “first” claim without the reviewed
+literature comparison. No transfer of DDMon proofs to a Java/passive adaptation.
+No promise of universal safe degradation outside observable assumptions.
+
+Document behavior, verification, unresolved dependencies and material limitations in
+handoffs. Publication/submission is not authorized by implementing the artifact.
+**Do not edit `CLAUDE.md` as part of this documentation revision.**
