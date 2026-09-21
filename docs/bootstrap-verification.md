@@ -1,7 +1,8 @@
 # A-BOOT verification and handoff
 
 Owner: Dev A. Artifact date: 2026-09-21. Verified: 2026-09-22 (Asia/Kolkata).
-Status: local bootstrap verification passed; team review and remote CI pending.
+Status: author and independent Dev B bootstrap verification passed; remote CI status
+has not been independently observed.
 
 ## Scope
 
@@ -54,6 +55,29 @@ analyzer tests cannot quietly import the testbed either. The baseline module has
 implementation/tests yet and correctly reports NO-SOURCE; six actual tests execute
 across common, instrumentation, analyzer and testbed.
 
+## Dev B consumer review
+
+Reviewer: Dev B (Jobin). Review date: 2026-09-22. Reviewed source commit: `21c8fb4`.
+
+Dev B independently downloaded the official Azul Zulu Java 21.0.12.1 macOS ARM64
+archive into a task-specific temporary directory and verified SHA-256
+`042093e0895c940a02d68e727bc37b59f3958e58aa1463ec9080845d77af0a45` against Azul's
+package metadata. Gradle used a separate temporary user home.
+
+| Dev B check | Result |
+|---|---|
+| `./gradlew --version` under Java 21 | PASS; Gradle 8.12.1 and Java 21.0.12.1 |
+| `./gradlew --no-daemon clean build` | PASS; 39 tasks, six tests, zero failures/errors/skips |
+| `./gradlew --no-daemon :analyzer:test :testbed:test` | PASS; requested tasks successful/up-to-date after clean build |
+| Wrapper JAR SHA-256 | MATCH: `2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046` |
+| Temporary analyzer test dependency on testbed | Expected failure at `testCompileClasspath` boundary |
+| Repository status after verification | No tracked changes |
+
+Dev B accepts A-BOOT at source commit `21c8fb4` as the build prerequisite for B-FEAS.
+This acceptance is limited to bootstrap/build compatibility and module isolation. It
+does not validate detector behavior, observe the GitHub Actions result, approve the v2
+contract, or satisfy any later gate.
+
 JUnit XML/HTML evidence is generated under each tested module's
 `build/test-results/test/` and `build/reports/tests/test/`. Build outputs are ignored,
 not committed as research results. GitHub Actions execution is a separate check after
@@ -61,7 +85,8 @@ publication of the change.
 
 ## Acceptance boundaries
 
-- A-SPEC is authored in `scenario-truth-spec.md`; B/C review is still pending.
+- A-SPEC is authored in `scenario-truth-spec.md`; Dev B lifecycle acceptance is
+  recorded there and Dev C truth/clock/oracle review remains pending.
 - A-BOOT does not satisfy B-FEAS: no gate, stream-tracer, trailers or cancellation
   feasibility result exists yet. No R1–R16 implementation is claimed by these tests.
 - No G0 approval, v2 types or historical v1 replay migration is included.

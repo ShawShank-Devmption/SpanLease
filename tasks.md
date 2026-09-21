@@ -8,13 +8,14 @@ explicitly permits a draft handoff.
 
 ### Dev A artifact handoff — 2026-09-21
 
-- **A-BOOT:** implemented and locally verified on Java 21 (`./gradlew clean build`);
-  six test cases, including 100 seeded property checks, passed. Remote CI/team review
-  remain pending. Evidence is recorded in `docs/bootstrap-verification.md`.
-- **A-SPEC:** `docs/scenario-truth-spec.md` authored; B lifecycle and C truth/clock
-  review are pending. No reviewer acceptance has been invented.
-- **B-FEAS:** consumes these artifacts after review/acceptance and availability in
-  the consumer checkout. This change does not implement B's gate or interfaces.
+- **A-BOOT:** implemented and independently verified by Dev B on Java 21
+  (`./gradlew clean build`); six test cases, including 100 seeded property checks,
+  passed. Remote CI status has not been independently observed. Evidence is recorded
+  in `docs/bootstrap-verification.md`.
+- **A-SPEC:** `docs/scenario-truth-spec.md` authored; Dev B lifecycle acceptance is
+  recorded against source commit `21c8fb4`; Dev C truth/clock review remains pending.
+- **B-FEAS:** A-BOOT and A-SPEC are accepted for Dev B consumption, so this task is
+  ready on the Jobin branch. No gate or instrumentation implementation is claimed yet.
 - **G0:** still pending all listed prerequisites and A/B/C sign-off. Frozen proto
   and historical v1 replay fixtures are unchanged.
 

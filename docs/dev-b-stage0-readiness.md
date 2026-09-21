@@ -8,15 +8,16 @@ semantics, dependencies, and decisions remain in `requirements.md`, `design.md`,
 ## 1. Current readiness
 
 As of 2026-09-22, commit `21c8fb4` supplies the Gradle wrapper, Java module build,
-compatibility tests, local A-BOOT verification record, and authored A-SPEC. Remote CI
-and team review of A-BOOT remain pending; B/C acceptance of A-SPEC is not recorded.
-No accepted `C-MODEL` or all-developer v2 sign-off is recorded.
+compatibility tests, A-BOOT verification record, and authored A-SPEC. Dev B independently
+verified and accepted A-BOOT and accepted the A-SPEC lifecycle handoff for B-FEAS.
+Remote CI status has not been independently observed; Dev C's A-SPEC review remains
+pending. No accepted `C-MODEL` or all-developer v2 sign-off is recorded.
 
 | Dev B activity | Required inputs | Current status |
 |---|---|---|
 | Prepare B-FEAS questions and acceptance plan | Existing requirements/design | Ready; this document |
-| Review A-BOOT and A-SPEC handoffs | Dev A commit `21c8fb4` | Ready |
-| Execute B-FEAS prototype | Accepted A-BOOT and A-SPEC | Blocked pending review/acceptance |
+| Review A-BOOT and A-SPEC handoffs | Dev A commit `21c8fb4` | Complete for Dev B |
+| Execute B-FEAS prototype | Accepted A-BOOT and A-SPEC | Ready |
 | Execute B-CONTRACT | Accepted B-FEAS and C-MODEL | Blocked |
 | Coordinate G0 | All dependencies listed in `tasks.md` | Blocked |
 | Implement B-TYPES or later production tasks | Accepted G0 | Blocked |
@@ -275,9 +276,8 @@ the primary paper or official version-specific documentation before it is assert
 
 ## 10. Next action
 
-Review Dev A's A-BOOT evidence and A-SPEC against the acceptance requests in section 2,
-then record acceptance or return concrete corrections. Request the C-MODEL handoff from
-Dev C. Once A-BOOT and A-SPEC are accepted, execute B-FEAS as an isolated feasibility
-task. Do not proceed from a bootstrap CI pass or a draft scenario note alone. After
-B-FEAS and C-MODEL are accepted, use the observed hook lifetimes and model
-counterexamples to complete B-CONTRACT and prepare the contract-tagged G0 review.
+Execute B-FEAS as the next isolated feasibility task and request the C-MODEL handoff
+from Dev C in parallel. B-FEAS must provide executable hook evidence rather than rely
+on the bootstrap compatibility tests. After B-FEAS and C-MODEL are accepted, use the
+observed hook lifetimes and model counterexamples to complete B-CONTRACT and prepare
+the contract-tagged G0 review.

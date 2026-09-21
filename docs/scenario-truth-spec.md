@@ -3,10 +3,11 @@
 Revision: 2026-09-21. Owner: Dev A. Consumers: B-FEAS, C-MODEL,
 C-CONTRACT, A-TESTBED and A-TRUTH.
 
-Status: authored for review; **acceptance by B/C has not been recorded**. This is
-a behavioral handoff, not a production Java API or a replacement for the pending
-G0 event/report contract. Requirements and design remain authoritative. No scenario
-runner, recorder or deadlock detector is implemented by this document.
+Status: authored for review; **Dev B lifecycle acceptance is recorded in section 8;
+Dev C truth/clock/oracle acceptance remains pending**. This is a behavioral handoff,
+not a production Java API or a replacement for the pending G0 event/report contract.
+Requirements and design remain authoritative. No scenario runner, recorder or deadlock
+detector is implemented by this document.
 
 ## 1. Supported run and inputs
 
@@ -240,9 +241,10 @@ production v2 type, replay migration or G0 approval is implied here.
 
 ## 8. Review and remaining caveats
 
-Acceptance record: Dev A authoring complete; Dev B lifecycle review **pending**;
-Dev C truth/clock/oracle review **pending**. Record reviewer, date and commit on
-acceptance. Resolve disagreements in decisions.md before dependent implementation.
+Acceptance record: Dev A authoring complete. Dev B (Jobin) accepted the lifecycle,
+gate, RPC and bare/instrumented-equivalence handoff on 2026-09-22 against source commit
+`21c8fb4`; this acceptance unblocks B-FEAS only. Dev C truth/clock/oracle review remains
+**pending**. Resolve disagreements in decisions.md before dependent implementation.
 
 This specification cannot prove recorder correctness, qualified clocks, fair runtime
 scheduling, feasibility of gRPC completion classification, or absence of hidden
