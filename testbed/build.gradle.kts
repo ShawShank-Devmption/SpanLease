@@ -9,6 +9,8 @@ dependencies {
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
     implementation(libs.protobuf.java)
+    testImplementation(platform(libs.otel.bom))
+    testImplementation(libs.otel.sdk)
 }
 
 protobuf {
