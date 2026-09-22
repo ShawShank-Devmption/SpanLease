@@ -3,10 +3,16 @@ package dev.spanlease.testbed.feasibility;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.ACQUIRE;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.APPLICATION_SPAN_START;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.ARRIVAL;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.BLOCK_END;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.CANCEL_REQUEST;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.EXECUTION_END;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.INVALID_ARRIVAL;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.QUEUED;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.READY;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.REJECTED;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.RELEASE;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.RESPONSE_OBSERVED;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.RESPONSE_RESERVED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -20,6 +26,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -143,6 +150,108 @@ final class FeasibilityGrpcIntegrationTest {
           .extracting(FeasibilityJournal.Entry::hook)
           .contains(INVALID_ARRIVAL)
           .doesNotContain(READY, ACQUIRE);
+    }
+  }
+
+  @Test
+  void responseCanPrecedeExitAndRelease() throws Exception {
+    CountDownLatch responseClosed = new CountDownLatch(1);
+    CountDownLatch allowExit = new CountDownLatch(1);
+    try (FeasibilityHarness harness =
+        FeasibilityHarness.start(
+            1,
+            1,
+            (request, observer, execution) -> {
+              observer.onNext(reply(request));
+              observer.onCompleted();
+              responseClosed.countDown();
+              assertThat(allowExit.await(5, TimeUnit.SECONDS)).isTrue();
+            },
+            true)) {
+      try {
+        FeasibilityBlockingHelper.CallHandle handle =
+            harness.helper().start(harness.stub(), request("respond-then-exit"), FIRST);
+        assertThat(responseClosed.await(2, TimeUnit.SECONDS)).isTrue();
+        FeasibilityBlockingHelper.CallResult result = handle.await(Duration.ofSeconds(2));
+        assertThat(result.completionKind())
+            .isEqualTo(FeasibilityBlockingHelper.CompletionKind.RESPONSE);
+        assertThat(result.responseReference()).isNotBlank();
+        assertThat(harness.gate().ownsSlot(FIRST)).isTrue();
+        assertThat(hooks(harness.journal(), FIRST)).doesNotContain(EXECUTION_END, RELEASE);
+
+        allowExit.countDown();
+        harness.journal().await(RELEASE, FIRST, Duration.ofSeconds(2));
+        assertThat(hooks(harness.journal(), FIRST))
+            .containsSubsequence(
+                RESPONSE_RESERVED, RESPONSE_OBSERVED, BLOCK_END, EXECUTION_END, RELEASE);
+      } finally {
+        allowExit.countDown();
+      }
+    }
+  }
+
+  @Test
+  void cancellationDoesNotReleaseAndCallbacksRemainIndependent() throws Exception {
+    CountDownLatch applicationRunning = new CountDownLatch(1);
+    CountDownLatch allowExit = new CountDownLatch(1);
+    AtomicReference<String> applicationThread = new AtomicReference<>();
+    AtomicReference<FeasibilityApplicationGate.CancellationToken> token = new AtomicReference<>();
+    try (FeasibilityHarness harness =
+        FeasibilityHarness.start(
+            1,
+            1,
+            (request, observer, execution) -> {
+              applicationThread.set(Thread.currentThread().getName());
+              token.set(execution.cancellation());
+              applicationRunning.countDown();
+              assertThat(allowExit.await(5, TimeUnit.SECONDS)).isTrue();
+            },
+            true)) {
+      try {
+        FeasibilityBlockingHelper.CallHandle handle =
+            harness.helper().start(harness.stub(), request("cancel-running"), FIRST);
+        assertThat(applicationRunning.await(2, TimeUnit.SECONDS)).isTrue();
+        handle.cancelLocally(new java.util.concurrent.CancellationException("probe"));
+        FeasibilityJournal.Entry cancellation =
+            harness.journal().await(CANCEL_REQUEST, FIRST, Duration.ofSeconds(2));
+        assertThat(token.get().requested()).isTrue();
+        assertThat(harness.gate().ownsSlot(FIRST)).isTrue();
+        assertThat(hooks(harness.journal(), FIRST)).doesNotContain(EXECUTION_END, RELEASE);
+        assertThat(cancellation.threadName()).startsWith("bfeas-grpc-callback-");
+        assertThat(applicationThread.get()).startsWith("bfeas-app-");
+        assertThat(cancellation.threadName()).isNotEqualTo(applicationThread.get());
+        assertThat(handle.await(Duration.ofSeconds(2)).completionKind())
+            .isEqualTo(FeasibilityBlockingHelper.CompletionKind.LOCAL);
+
+        allowExit.countDown();
+        harness.journal().await(RELEASE, FIRST, Duration.ofSeconds(2));
+        assertThat(hooks(harness.journal(), FIRST))
+            .containsSubsequence(CANCEL_REQUEST, EXECUTION_END, RELEASE);
+      } finally {
+        allowExit.countDown();
+      }
+    }
+  }
+
+  @Test
+  void missingRemoteTrailersRemainUnknown() throws Exception {
+    try (FeasibilityHarness harness =
+        FeasibilityHarness.start(
+            1,
+            1,
+            (request, observer, execution) ->
+                observer.onError(Status.INTERNAL.asRuntimeException()),
+            false)) {
+      FeasibilityBlockingHelper.CallResult result =
+          harness
+              .helper()
+              .start(harness.stub(), request("remote-error"), FIRST)
+              .await(Duration.ofSeconds(2));
+      assertThat(result.status().getCode()).isEqualTo(Status.Code.INTERNAL);
+      assertThat(result.responseReference()).isEmpty();
+      assertThat(result.completionKind())
+          .isEqualTo(FeasibilityBlockingHelper.CompletionKind.UNKNOWN);
+      assertThat(hooks(harness.journal(), FIRST)).containsOnlyOnce(BLOCK_END);
     }
   }
 
