@@ -13,6 +13,7 @@ import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.REJECTED
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.RELEASE;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.RESPONSE_OBSERVED;
 import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.RESPONSE_RESERVED;
+import static dev.spanlease.testbed.feasibility.FeasibilityJournal.Hook.SENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -68,6 +69,9 @@ final class FeasibilityGrpcIntegrationTest {
             harness.journal().await(QUEUED, SECOND, Duration.ofSeconds(2));
         assertThat(arrival.ordinal()).isLessThan(ready.ordinal());
         assertThat(ready.ordinal()).isLessThan(queued.ordinal());
+        FeasibilityJournal.Entry sent =
+            harness.journal().await(SENT, SECOND, Duration.ofSeconds(2));
+        assertThat(arrival.reference()).isEqualTo("client@probe#" + sent.ordinal());
         assertThat(hooks(harness.journal(), SECOND))
             .doesNotContain(ACQUIRE, APPLICATION_SPAN_START);
         assertThat(harness.gate().ownsSlot(SECOND)).isFalse();
@@ -176,6 +180,9 @@ final class FeasibilityGrpcIntegrationTest {
         assertThat(result.completionKind())
             .isEqualTo(FeasibilityBlockingHelper.CompletionKind.RESPONSE);
         assertThat(result.responseReference()).isNotBlank();
+        FeasibilityJournal.Entry reserved =
+            harness.journal().await(RESPONSE_RESERVED, FIRST, Duration.ofSeconds(2));
+        assertThat(result.responseReference()).isEqualTo("server@svcA#" + reserved.ordinal());
         assertThat(harness.gate().ownsSlot(FIRST)).isTrue();
         assertThat(hooks(harness.journal(), FIRST)).doesNotContain(EXECUTION_END, RELEASE);
 
