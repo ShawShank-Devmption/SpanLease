@@ -1,9 +1,9 @@
 # Dev B Stage 0 Readiness
 
-Status: planning and review aid only. This document does not complete `B-FEAS`,
-start `B-CONTRACT`, approve contract v2, or satisfy `G0`. The authoritative scope,
-semantics, dependencies, and decisions remain in `requirements.md`, `design.md`,
-`tasks.md`, and `docs/decisions.md`.
+Status: feasibility evidence ready for A/C review, not accepted. This document does
+not complete `B-FEAS`, start `B-CONTRACT`, approve contract v2, or satisfy `G0`.
+The authoritative scope, semantics, dependencies, and decisions remain in
+`requirements.md`, `design.md`, `tasks.md`, and `docs/decisions.md`.
 
 ## 1. Current readiness
 
@@ -17,7 +17,7 @@ pending. No accepted `C-MODEL` or all-developer v2 sign-off is recorded.
 |---|---|---|
 | Prepare B-FEAS questions and acceptance plan | Existing requirements/design | Ready; this document |
 | Review A-BOOT and A-SPEC handoffs | Dev A commit `21c8fb4` | Complete for Dev B |
-| Execute B-FEAS prototype | Accepted A-BOOT and A-SPEC | Ready |
+| Execute B-FEAS prototype | Accepted A-BOOT and A-SPEC | Test-only implementation evidence ready for A/C review; see `docs/b-feas-handoff.md` |
 | Execute B-CONTRACT | Accepted B-FEAS and C-MODEL | Blocked |
 | Coordinate G0 | All dependencies listed in `tasks.md` | Blocked |
 | Implement B-TYPES or later production tasks | Accepted G0 | Blocked |
@@ -146,23 +146,30 @@ are feasibility artifacts, not independent truth or analyzer input.
 
 B-FEAS is ready for A/C review only when all of the following are evidenced:
 
-- [ ] The prototype uses the build and scenario contract accepted from A.
-- [ ] The callback executor and monitored application gate are distinct.
-- [ ] One admitted handler job maps to one execution and one named slot.
-- [ ] Arrival is captured before admission without treating arrival as readiness.
-- [ ] Saturated ready work is observable before an application span starts.
-- [ ] Acquire occurs before application execution.
-- [ ] Blocking boundaries describe the helper call, not a claimed JVM park.
-- [ ] Request metadata refers to a committed sent event.
-- [ ] Response trailers refer to a committed response-sent event.
-- [ ] Response receipt/helper return, cancellation, task exit, and release remain
+- [x] The prototype uses the build and scenario contract accepted from A.
+- [x] The callback executor and monitored application gate are distinct.
+- [x] One admitted handler job maps to one execution and one named slot in the fixture.
+- [x] Arrival is captured before admission without treating arrival as readiness.
+- [x] Saturated ready work is observable before an application span starts.
+- [x] Acquire occurs before application execution.
+- [x] Blocking boundaries describe the helper call, not a claimed JVM park.
+- [x] Request metadata refers to a committed test sent marker.
+- [x] Response trailers refer to a committed test response reservation.
+- [x] Response receipt/helper return, cancellation, task exit, and release remain
       distinct.
-- [ ] Response-before-exit and cancel-before-exit are demonstrated.
-- [ ] Application exceptions cannot leak a worker slot.
-- [ ] No application path waits for telemetry network I/O or queue space.
-- [ ] No blocking application work runs on transport/callback threads.
-- [ ] Unsupported completion origins are reported as invalid/unknown evidence.
-- [ ] Exact hook lifetimes and limitations are handed to A and C.
+- [x] Response-before-exit and cancel-before-exit are demonstrated.
+- [x] A throwing test gate job ends/releases and the slot is reusable.
+- [ ] No application path waits for telemetry network I/O or queue space: this fixture
+      has no production telemetry/export path, so it cannot establish I4.
+- [x] No blocking application work runs on transport/callback threads in the tested harness.
+- [x] Unsupported completion origins are reported as UNKNOWN in the tested case.
+- [x] Exact hook lifetimes and limitations are documented for A/C review in
+      `docs/b-feas-handoff.md`; acceptance has not been recorded.
+
+The checked items are test-only observations at source commit `05825ea`, not
+production invariant or contract approval. Deadline/local-origin and duplicate
+metadata-key behavior remain unresolved; see `docs/b-feas-handoff.md` before
+attempting B-CONTRACT.
 
 This checklist supplements but does not replace the `B-FEAS` completion row in
 `tasks.md`.
@@ -276,8 +283,7 @@ the primary paper or official version-specific documentation before it is assert
 
 ## 10. Next action
 
-Execute B-FEAS as the next isolated feasibility task and request the C-MODEL handoff
-from Dev C in parallel. B-FEAS must provide executable hook evidence rather than rely
-on the bootstrap compatibility tests. After B-FEAS and C-MODEL are accepted, use the
-observed hook lifetimes and model counterexamples to complete B-CONTRACT and prepare
-the contract-tagged G0 review.
+Request Dev A/C review of the test-only B-FEAS evidence in `docs/b-feas-handoff.md`
+and obtain Dev C's C-MODEL handoff. Resolve the deadline/local-origin contract
+question explicitly. Only after B-FEAS and C-MODEL are accepted may B-CONTRACT begin;
+G0 still requires every listed dependency and all-developer sign-off.
