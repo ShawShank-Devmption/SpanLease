@@ -21,8 +21,8 @@ git diff --check
 ```
 
 The final clean build executed 39 Gradle tasks and 29 JUnit test cases with zero failures,
-errors or skips; 23 cases are in the feasibility package. Before the final review fixes,
-the feasibility selection passed on three consecutive forced runs (21 cases each).
+errors or skips; 23 cases are in the feasibility package. The final 23-case feasibility
+selection passed on three consecutive forced runs.
 The separate analyzer/testbed request was
 up-to-date after the clean build, not a second fresh test execution. `integrationTest`
 does not exist yet; its real detector litmus suite belongs to I-CI after G2.
