@@ -202,6 +202,38 @@ final class FeasibilityClientHooksTest {
     }
   }
 
+  @Test
+  void unexpectedStubFailureStillProducesOneUnknownTerminalResult() throws Exception {
+    FeasibilityJournal journal = new FeasibilityJournal();
+    Channel brokenChannel =
+        new Channel() {
+          @Override
+          public String authority() {
+            return "broken-probe";
+          }
+
+          @Override
+          public <ReqT, RespT> ClientCall<ReqT, RespT> newCall(
+              MethodDescriptor<ReqT, RespT> method, CallOptions options) {
+            throw new IllegalStateException("probe dispatch failure");
+          }
+        };
+    try (FeasibilityBlockingHelper helper =
+        new FeasibilityBlockingHelper(journal, "client@probe")) {
+      FeasibilityBlockingHelper.CallResult result =
+          helper
+              .start(ChainGrpc.newBlockingStub(brokenChannel), request("broken"), INVOCATION)
+              .await(Duration.ofSeconds(2));
+      assertThat(result.failure()).isInstanceOf(IllegalStateException.class);
+      assertThat(result.completionKind())
+          .isEqualTo(FeasibilityBlockingHelper.CompletionKind.UNKNOWN);
+      assertThat(journal.entriesFor(INVOCATION))
+          .extracting(FeasibilityJournal.Entry::hook)
+          .containsOnlyOnce(FeasibilityJournal.Hook.BLOCK_BEGIN)
+          .containsOnlyOnce(FeasibilityJournal.Hook.BLOCK_END);
+    }
+  }
+
   private static CallRequest request(String requestId) {
     return CallRequest.newBuilder()
         .setRequestId(requestId)

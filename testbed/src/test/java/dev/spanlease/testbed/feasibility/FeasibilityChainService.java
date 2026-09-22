@@ -84,6 +84,9 @@ final class FeasibilityChainService extends ChainGrpc.ChainImplBase {
             });
     if (admission == FeasibilityApplicationGate.Admission.REJECTED) {
       observer.onError(Status.RESOURCE_EXHAUSTED.asRuntimeException());
+    } else if (serverObserver.isCancelled()) {
+      // A cancellation can win after callback installation but before gate registration.
+      gate.cancel(invocationId);
     }
   }
 }

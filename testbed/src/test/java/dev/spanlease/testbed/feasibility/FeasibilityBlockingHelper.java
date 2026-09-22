@@ -110,6 +110,9 @@ final class FeasibilityBlockingHelper implements AutoCloseable {
               } catch (StatusRuntimeException rpcFailure) {
                 failure = rpcFailure;
                 status = rpcFailure.getStatus();
+              } catch (RuntimeException unexpectedFailure) {
+                failure = unexpectedFailure;
+                status = Status.UNKNOWN.withCause(unexpectedFailure);
               } finally {
                 cancellable.cancel(null);
                 journal.append(
