@@ -15,7 +15,7 @@ explicitly permits a draft handoff.
 - **A-SPEC:** `docs/scenario-truth-spec.md` authored; Dev B lifecycle acceptance is
   recorded against source commit `21c8fb4`; Dev C truth/clock review remains pending.
 - **B-FEAS:** A-BOOT and A-SPEC are accepted for Dev B consumption. Test-only real
-  grpc-java feasibility evidence at source commit `05825ea` is ready for Dev A/C
+  grpc-java feasibility evidence at source commit `c5ab975` is ready for Dev A/C
   review in `docs/b-feas-handoff.md`; it is not accepted or production instrumentation.
   The completion-origin/deadline boundary remains an explicit contract question.
 - **G0:** still pending all listed prerequisites and A/B/C sign-off. Frozen proto

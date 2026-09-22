@@ -166,7 +166,7 @@ B-FEAS is ready for A/C review only when all of the following are evidenced:
 - [x] Exact hook lifetimes and limitations are documented for A/C review in
       `docs/b-feas-handoff.md`; acceptance has not been recorded.
 
-The checked items are test-only observations at source commit `05825ea`, not
+The checked items are test-only observations at source commit `c5ab975`, not
 production invariant or contract approval. Deadline/local-origin and duplicate
 metadata-key behavior remain unresolved; see `docs/b-feas-handoff.md` before
 attempting B-CONTRACT.

@@ -1,7 +1,7 @@
 # B-FEAS Runtime Semantics Handoff
 
 Status: test-only implementation evidence ready for Dev A/Dev C review; B-FEAS is not
-accepted and G0 is not approved. Owner: Dev B (Jobin). Source tested: `05825ea` on
+accepted and G0 is not approved. Owner: Dev B (Jobin). Source tested: `c5ab975` on
 `jobin-b-feas-impl`, based on `Jobin` commit `0b40464`.
 
 ## Environment and commands
@@ -20,9 +20,10 @@ With `JAVA_HOME` and `PATH` selecting that JDK, these commands passed:
 git diff --check
 ```
 
-The clean build executed 39 Gradle tasks and 27 JUnit test cases with zero failures,
-errors or skips; 21 cases are in the feasibility package. The feasibility selection
-passed on three consecutive forced runs. The separate analyzer/testbed request was
+The final clean build executed 39 Gradle tasks and 29 JUnit test cases with zero failures,
+errors or skips; 23 cases are in the feasibility package. Before the final review fixes,
+the feasibility selection passed on three consecutive forced runs (21 cases each).
+The separate analyzer/testbed request was
 up-to-date after the clean build, not a second fresh test execution. `integrationTest`
 does not exist yet; its real detector litmus suite belongs to I-CI after G2.
 
@@ -104,6 +105,11 @@ explicitly called its `cancelLocally` hook. Cancellation notification by itself
 did not free capacity. The test fixture uses bounded waits and no `Thread.sleep`
 for synchronization.
 
+A focused adapter regression simulates cancellation arriving immediately when the
+handler is registered, before gate submission. The adapter rechecks cancellation
+after admission so the assigned job's token is signalled. This regression uses a
+controlled observer, not a second real-transport timing claim.
+
 ## Completion-origin classification
 
 - A valid observed terminal response reference yields RESPONSE, even for an
@@ -113,12 +119,14 @@ for synchronization.
 - A remote `INTERNAL` error from a deliberately uninstrumented endpoint with no
   response trailers yields UNKNOWN, never a fabricated LOCAL result.
 - The helper records one BLOCK_BEGIN and one BLOCK_END per tested call. It does
-  not infer LOCAL from missing trailers alone.
+  not infer LOCAL from missing trailers alone. A controlled unexpected stub dispatch
+  exception also produces one terminal UNKNOWN result rather than escaping as an
+  unclassified future failure.
 
 ## Verification results
 
 Focused journal, gate, server-hook, client-hook and real-RPC integration tests all
-passed, as did the 27-case clean repository build. Exact request and response
+passed, as did the 29-case clean repository build. Exact request and response
 reference equality is asserted in the real-RPC tests. The checked boundaries
 illustrate I2, I3, and I5 in this fixture only; they are not production invariant
 proofs. No v2 DTO, event, manifest, report or fixture was added or migrated.
