@@ -11,12 +11,20 @@ explicitly permits a draft handoff.
 - **A-BOOT:** implemented and locally verified on Java 21 (`./gradlew clean build`);
   six test cases, including 100 seeded property checks, passed. Remote CI/team review
   remain pending. Evidence is recorded in `docs/bootstrap-verification.md`.
-- **A-SPEC:** `docs/scenario-truth-spec.md` authored; B lifecycle and C truth/clock
-  review are pending. No reviewer acceptance has been invented.
-- **B-FEAS:** consumes these artifacts after review/acceptance and availability in
-  the consumer checkout. This change does not implement B's gate or interfaces.
-- **G0:** still pending all listed prerequisites and A/B/C sign-off. Frozen proto
-  and historical v1 replay fixtures are unchanged.
+- **A-SPEC:** `docs/scenario-truth-spec.md` authored and accepted on 2026-09-22 by the
+  sole implementer exercising the B lifecycle and C truth/clock review perspectives
+  under D13. Independent review is not claimed.
+- **B-FEAS:** real grpc-java lifecycle feasibility is verified by
+  `GrpcGateFeasibilityTest`; its gate remains test-only and does not pre-empt B-GATE.
+- **C-MODEL/R-LIT/B-CONTRACT/C-CONTRACT:** solo role review evidence and remaining
+  limitations are recorded in `docs/stage0-g0-review.md`.
+- **G0:** approved on 2026-09-22 under D13/D14 for solo schema-v2 implementation.
+  Independent review is not claimed; G1–G3 remain pending.
+- **Stage-1 implementation in progress:** B-TYPES and C-TYPES are implemented in
+  `common`; B-GATE has ordered admission/exit, overflow and loss-gap tests; the blocking
+  RPC lifecycle API, bounded OTel sink, OTLP decoder and finite-run analyzer core are
+  implemented. B-RPC's reusable grpc adapter, scheduled B-SCAN, bounded OTLP receiver,
+  independent A runtime/truth path and the complete R1–R16/G1 evidence remain pending.
 
 ## 1. Ownership and working rules
 

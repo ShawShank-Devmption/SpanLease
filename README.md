@@ -41,6 +41,32 @@ directories and is excluded from handwritten-source formatting. grpc-java's
 detector litmus tests. A successful bootstrap build is not G0, G1 or G2 acceptance.
 CI runs the real build unconditionally; it no longer treats a skipped build as success.
 
+## Pre-G0 model MVP
+
+An executable Java 21 model demonstrates conservative verdict selection without
+freezing the pending v2 wire/report contracts:
+
+```sh
+./gradlew :analyzer:modelMvp
+```
+
+It evaluates a persistent closed ring and a fully observed spare-capacity case. The
+implementation is deliberately confined to analyzer test sources; it is not the real
+gRPC/OTLP detector or integration evidence. See
+[`docs/model-mvp.md`](docs/model-mvp.md) for scope and limitations.
+
+## Production-layer MVP demo
+
+After selecting Java 21, run the schema-v2 analyzer demonstration:
+
+```sh
+./gradlew :analyzer:productionDemo
+```
+
+It prints deterministic JSON for a certified closed ring and a fully observed
+spare-capacity negative. See [`docs/mvp-demo-guide.md`](docs/mvp-demo-guide.md) for the
+five-minute demo, test commands, architecture explanation and integration sequence.
+
 ## Dev A handoff
 
 [A-SPEC](docs/scenario-truth-spec.md) defines the behavioral prerequisites for

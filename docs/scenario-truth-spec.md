@@ -3,7 +3,8 @@
 Revision: 2026-09-21. Owner: Dev A. Consumers: B-FEAS, C-MODEL,
 C-CONTRACT, A-TESTBED and A-TRUTH.
 
-Status: authored for review; **acceptance by B/C has not been recorded**. This is
+Status: accepted for solo role-based implementation review on 2026-09-22 under D13;
+this is **not independent B/C review**. This is
 a behavioral handoff, not a production Java API or a replacement for the pending
 G0 event/report contract. Requirements and design remain authoritative. No scenario
 runner, recorder or deadlock detector is implemented by this document.
@@ -240,9 +241,13 @@ production v2 type, replay migration or G0 approval is implied here.
 
 ## 8. Review and remaining caveats
 
-Acceptance record: Dev A authoring complete; Dev B lifecycle review **pending**;
-Dev C truth/clock/oracle review **pending**. Record reviewer, date and commit on
-acceptance. Resolve disagreements in decisions.md before dependent implementation.
+Acceptance record: Dev A authoring complete. On 2026-09-22 the sole project implementer
+reviewed the document from the Dev B lifecycle perspective and the Dev C truth/clock/
+oracle perspective under D13. No contradiction was found with requirements/design; the
+review accepts this artifact as input to B-FEAS and C-MODEL. The reviewed repository
+baseline is commit `21c8fb4`; this working-tree acceptance must be committed with D13
+before it is a durable handoff. This is role-based self-review, not independent review.
+Resolve later disagreements in decisions.md before dependent implementation.
 
 This specification cannot prove recorder correctness, qualified clocks, fair runtime
 scheduling, feasibility of gRPC completion classification, or absence of hidden

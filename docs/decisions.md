@@ -97,3 +97,24 @@ response-before-exit uses a separate diagnostic lifecycle hook. B/C review is pe
 not fabricated. No event/report/proto/replay wire change. *Why:* consumers need explicit
 physical semantics and truth independence before proposing production interfaces.
 *Affects:* docs/scenario-truth-spec.md, design §6.4, tasks.md, AGENTS.md.
+
+**D13 | 2026-09-22 | One implementer may execute all three role lanes while ownership
+and gates remain distinct.** The project owner directed solo implementation for the
+current MVP. Dev A/B/C labels continue to identify responsibility, handoff direction and
+the review perspective that must be exercised; they do not imply three different people
+during this solo phase. A role review by the sole implementer is recorded as such and is
+never described as independent review. Contract G0 still requires completion and review
+of every listed prerequisite before v2 is frozen; later G1–G3 evidence gates are not
+waived. *Why:* permit sequential implementation without fabricating additional
+contributors or collapsing module/truth boundaries. *Affects:* interpretation of role
+assignments and approvals in tasks.md; no wire, predicate or architecture change.
+
+**D14 | 2026-09-22 | G0 schema v2 frozen by solo role-based review.** After the D13
+review model, the sole implementer accepted A-BOOT, A-SPEC, C-MODEL, R-LIT and executable
+B-FEAS evidence, then reviewed the B/C contract decisions recorded in
+`docs/stage0-g0-review.md`. Version 2's thirteen event payloads, JSON replay/report
+direction and explicit v1 incompatibility are now the implementation baseline. This is
+not independent three-person review and does not satisfy G1–G3. *Why:* the project owner
+authorized one implementer to proceed across all three preserved responsibility lanes.
+*Affects:* B-TYPES/C-TYPES and subsequent v2 implementation; wire-visible changes still
+require a later schema bump and contract review.
