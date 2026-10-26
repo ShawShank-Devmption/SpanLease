@@ -76,4 +76,24 @@ class V2ContractTest {
         .extracting(VerdictReport.Execution::id)
         .containsExactly("a0", "b0");
   }
+
+  @Test
+  void manifestRoundTripsThroughContractJson() throws Exception {
+    RunManifest manifest =
+        new RunManifest(
+            2,
+            "run-1",
+            "sha256:abc",
+            List.of(
+                new RunManifest.Instance("driver-0@e1", "driver", 0, 10_000, 50),
+                new RunManifest.Instance("svcA-0@e1", "svcA", 0, 10_000, 50)),
+            List.of(
+                new RunManifest.Pool("svcA-0@e1", "app", List.of("svcA-0@e1:app:slot-0"), true)),
+            new RunManifest.Parameters(2_000, 1_000, 50, 250, 500, 1_850, 500));
+
+    String encoded = ContractJson.mapper().writeValueAsString(manifest);
+
+    assertThat(ContractJson.mapper().readValue(encoded, RunManifest.class)).isEqualTo(manifest);
+    assertThat(encoded).contains("\"checkpoint_freshness_ms\":1850").doesNotContain("qualified_id");
+  }
 }

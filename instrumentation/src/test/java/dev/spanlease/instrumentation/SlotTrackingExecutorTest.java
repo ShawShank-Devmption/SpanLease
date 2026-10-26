@@ -84,7 +84,8 @@ class SlotTrackingExecutorTest {
           return true;
         };
 
-    try (SlotTrackingExecutor gate = gate(sink, 1)) {
+    InstanceRecorder recorder = recorder(sink);
+    try (SlotTrackingExecutor gate = gate(recorder, 1)) {
       assertThat(
               gate.submit(
                   "inv-1",
@@ -97,7 +98,7 @@ class SlotTrackingExecutorTest {
       assertThat(gate.submit("inv-2", () -> {})).isEqualTo(SlotTrackingExecutor.Admission.QUEUED);
       assertThat(gate.submit("inv-3", () -> {})).isEqualTo(SlotTrackingExecutor.Admission.REJECTED);
 
-      gate.checkpoint();
+      recorder.checkpoint();
       ObservationEvent checkpoint = accepted.get(accepted.size() - 1);
       assertThat(checkpoint.eventType()).isEqualTo(EventType.INSTANCE_CHECKPOINT);
       assertThat(checkpoint.localSeq()).isEqualTo(5);
@@ -113,19 +114,24 @@ class SlotTrackingExecutorTest {
   }
 
   private static SlotTrackingExecutor gate(EventSink sink) {
-    return gate(sink, 4);
+    return gate(recorder(sink), 4);
   }
 
-  private static SlotTrackingExecutor gate(EventSink sink, int waitingCapacity) {
+  private static InstanceRecorder recorder(EventSink sink) {
     AtomicLong monotonic = new AtomicLong();
-    return new SlotTrackingExecutor(
+    return new InstanceRecorder(
         "instance",
+        sink,
+        Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
+        monotonic::incrementAndGet);
+  }
+
+  private static SlotTrackingExecutor gate(InstanceRecorder recorder, int waitingCapacity) {
+    return new SlotTrackingExecutor(
+        recorder,
         "main",
         1,
         waitingCapacity,
-        sink,
-        Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
-        monotonic::incrementAndGet,
         runnable -> {
           Thread thread = new Thread(runnable, "slot-test-worker");
           thread.setDaemon(true);

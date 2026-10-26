@@ -42,6 +42,7 @@ class RpcLifecycleTest {
             block.completeResponse("B#9", EventPayload.Outcome.OK);
             assertThatThrownBy(() -> block.completeLocal(EventPayload.Outcome.ERROR))
                 .isInstanceOf(IllegalStateException.class);
+            return EventPayload.Outcome.OK;
           });
 
       assertThat(sentCommitted.await(5, TimeUnit.SECONDS)).isTrue();
@@ -69,10 +70,11 @@ class RpcLifecycleTest {
       gate.submit(
           "inbound",
           execution -> {
-            gate.cancellationRequested(
-                execution, EventPayload.CancelSource.CLIENT, EventPayload.CancelReason.REQUESTED);
+            gate.requestCancellation(
+                "inbound", EventPayload.CancelSource.CLIENT, EventPayload.CancelReason.REQUESTED);
             cancellationRecorded.countDown();
             await(mayExit);
+            return EventPayload.Outcome.CANCELLED;
           });
 
       assertThat(cancellationRecorded.await(5, TimeUnit.SECONDS)).isTrue();
@@ -81,7 +83,7 @@ class RpcLifecycleTest {
           .extracting(ObservationEvent::eventType)
           .doesNotContain(EventType.RESOURCE_RELEASE);
       mayExit.countDown();
-      awaitSize(events, 4);
+      awaitSize(events, 5);
       assertThat(events)
           .extracting(ObservationEvent::eventType)
           .endsWith(
@@ -92,13 +94,14 @@ class RpcLifecycleTest {
   private static SlotTrackingExecutor gate(List<ObservationEvent> events) {
     AtomicLong monotonic = new AtomicLong();
     return new SlotTrackingExecutor(
-        "A",
+        new InstanceRecorder(
+            "A",
+            events::add,
+            Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
+            monotonic::incrementAndGet),
         "main",
         1,
         4,
-        events::add,
-        Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
-        monotonic::incrementAndGet,
         runnable -> new Thread(runnable, "rpc-lifecycle-worker"));
   }
 

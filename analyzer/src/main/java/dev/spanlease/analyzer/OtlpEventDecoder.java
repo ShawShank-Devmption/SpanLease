@@ -74,9 +74,18 @@ public final class OtlpEventDecoder {
     }
   }
 
+  /**
+   * The OTel SDK marshals an empty string attribute as an AnyValue with no value set, so that form
+   * matches only an empty expected value; any other representation must be the exact string.
+   */
   private static void requireString(Map<String, AnyValue> attributes, String key, String expected) {
     AnyValue value = attributes.get(key);
-    if (value == null || !value.hasStringValue() || !value.getStringValue().equals(expected)) {
+    boolean matches =
+        value != null
+            && (value.hasStringValue()
+                ? value.getStringValue().equals(expected)
+                : expected.isEmpty() && value.getValueCase() == AnyValue.ValueCase.VALUE_NOT_SET);
+    if (!matches) {
       throw new IllegalArgumentException("missing or conflicting attribute: " + key);
     }
   }

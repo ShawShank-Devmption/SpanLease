@@ -149,10 +149,11 @@ public final class AnalyzerEngine {
       String instanceId = entry.getKey();
       TreeMap<Long, ObservationEnvelope> stream = entry.getValue();
       ObservationEnvelope checkpoint = null;
-      for (ObservationEnvelope envelope : stream.values()) {
-        if (envelope.event().payload() instanceof EventPayload.InstanceCheckpoint
-            && contiguousThrough(stream, envelope.event().localSeq())) {
+      for (ObservationEnvelope envelope :
+          stream.headMap(contiguousPrefix(stream), true).descendingMap().values()) {
+        if (envelope.event().payload() instanceof EventPayload.InstanceCheckpoint) {
           checkpoint = envelope;
+          break;
         }
       }
       if (checkpoint == null) {
@@ -173,14 +174,16 @@ public final class AnalyzerEngine {
     return new Certification(Map.copyOf(cut), Map.copyOf(checkpoints), List.copyOf(missing));
   }
 
-  private static boolean contiguousThrough(
-      TreeMap<Long, ObservationEnvelope> stream, long throughSequence) {
-    for (long sequence = 1; sequence <= throughSequence; sequence++) {
-      if (!stream.containsKey(sequence)) {
-        return false;
+  /** Highest sequence n such that every sequence 1..n has been received. */
+  private static long contiguousPrefix(TreeMap<Long, ObservationEnvelope> stream) {
+    long expected = 1;
+    for (long sequence : stream.keySet()) {
+      if (sequence != expected) {
+        break;
       }
+      expected++;
     }
-    return true;
+    return expected - 1;
   }
 
   private boolean clockQualified(String instanceId, long wallTimeMs) {
@@ -248,6 +251,10 @@ public final class AnalyzerEngine {
       }
     }
     for (ExecutionState execution : state.executions.values()) {
+      if (execution.blockInvocation != null && execution.cancelPending) {
+        // Cancellation while the helper is still blocked is unresolved eligibility (design §5.3).
+        state.missing.add(new VerdictReport.MissingEvidence("CANCEL_PENDING", execution.id));
+      }
       if (execution.blockInvocation != null && !execution.cancelPending) {
         if (!state.waiting.containsKey(execution.blockInvocation)
             && !state.executionByInvocation.containsKey(execution.blockInvocation)) {
@@ -302,6 +309,7 @@ public final class AnalyzerEngine {
         execution.blockInvocation = block.invocationId();
         execution.blockRef = event.eventReference();
         execution.blockStartMs = event.wallTimeMs();
+        execution.leases.clear();
       }
     } else if (payload instanceof EventPayload.ExecutionLease lease) {
       ExecutionState execution = state.executions.get(lease.executionId());
@@ -309,9 +317,8 @@ public final class AnalyzerEngine {
         state.missing.add(
             new VerdictReport.MissingEvidence("INVALID_EVENT", event.eventReference()));
       } else {
-        execution.leaseRef = event.eventReference();
-        execution.leaseObservedMs = event.wallTimeMs();
-        execution.leaseExpiryMs = lease.leaseExpiryMs();
+        execution.leases.add(
+            new LeaseState(event.eventReference(), event.wallTimeMs(), lease.leaseExpiryMs()));
       }
     } else if (payload instanceof EventPayload.RpcBlockEnd end) {
       ExecutionState execution = state.executions.get(end.executionId());
@@ -321,18 +328,24 @@ public final class AnalyzerEngine {
       } else {
         execution.blockInvocation = null;
         execution.blockRef = null;
+        execution.leases.clear();
       }
-    } else if (payload instanceof EventPayload.ExecutionCancel cancel
-        && !cancel.executionId().isEmpty()) {
-      ExecutionState execution = state.executions.get(cancel.executionId());
-      if (execution != null) {
-        execution.cancelPending = true;
+    } else if (payload instanceof EventPayload.ExecutionCancel cancel) {
+      if (cancel.executionId().isEmpty()) {
+        // Cancel won before assignment (or admission was rejected): no queue entry remains.
+        state.waiting.remove(cancel.invocationId());
+      } else {
+        ExecutionState execution = state.executions.get(cancel.executionId());
+        if (execution != null) {
+          execution.cancelPending = true;
+        }
       }
     } else if (payload instanceof EventPayload.ExecutionEnd end) {
       ExecutionState execution = state.executions.get(end.executionId());
       if (execution != null) {
         execution.ended = true;
         execution.blockInvocation = null;
+        execution.leases.clear();
       }
     } else if (payload instanceof EventPayload.ResourceRelease release) {
       if (!release.executionId().equals(state.unitOwners.get(release.resourceInstanceId()))) {
@@ -384,32 +397,24 @@ public final class AnalyzerEngine {
       Reconstructed state, Set<String> residual, Certification certification) {
     long epsilon = manifest.parameters().epsilonMs();
     long start = Long.MIN_VALUE;
-    long end = Long.MAX_VALUE;
-    List<VerdictReport.MissingEvidence> missing = new ArrayList<>();
     for (String member : residual) {
       ExecutionState execution = state.executions.get(member);
       if (execution != null) {
-        start = Math.max(start, execution.blockStartMs + epsilon);
-        if (execution.leaseRef == null
-            || execution.leaseObservedMs + epsilon > end
-            || execution.leaseExpiryMs - epsilon < execution.leaseObservedMs + epsilon) {
-          missing.add(new VerdictReport.MissingEvidence("EXPIRED_LEASE", member));
-        }
-        start = Math.max(start, execution.acquireStartMs + epsilon);
+        start =
+            Math.max(start, Math.max(execution.acquireStartMs, execution.blockStartMs) + epsilon);
       } else {
-        WaitState wait = state.waiting.get(member);
-        start = Math.max(start, wait.startMs + epsilon);
+        start = Math.max(start, state.waiting.get(member).startMs + epsilon);
       }
     }
+    long end = Long.MAX_VALUE;
     for (ObservationEnvelope checkpoint : certification.checkpoints().values()) {
       end = Math.min(end, checkpoint.event().wallTimeMs() - epsilon);
     }
+
+    List<VerdictReport.MissingEvidence> missing = new ArrayList<>();
     for (String member : residual) {
       ExecutionState execution = state.executions.get(member);
-      if (execution != null
-          && (execution.leaseRef == null
-              || execution.leaseObservedMs + epsilon > end
-              || execution.leaseExpiryMs - epsilon < end)) {
+      if (execution != null && execution.leaseCovering(end, epsilon) == null) {
         missing.add(new VerdictReport.MissingEvidence("EXPIRED_LEASE", member));
       }
     }
@@ -418,14 +423,7 @@ public final class AnalyzerEngine {
       missing.add(new VerdictReport.MissingEvidence("PERSISTENCE_TOO_SHORT", "residual"));
     }
     if (!missing.isEmpty()) {
-      List<VerdictReport.MissingEvidence> sortedMissing =
-          missing.stream()
-              .distinct()
-              .sorted(
-                  java.util.Comparator.comparing(VerdictReport.MissingEvidence::code)
-                      .thenComparing(VerdictReport.MissingEvidence::subject))
-              .toList();
-      return new PersistenceResult(null, sortedMissing);
+      return new PersistenceResult(null, List.copyOf(missing));
     }
     return new PersistenceResult(
         new VerdictReport.Persistence(start, end, duration, manifest.parameters().persistenceMs()),
@@ -506,7 +504,7 @@ public final class AnalyzerEngine {
                       entry.getKey(),
                       owner.id,
                       owner.acquireRef,
-                      owner.leaseRef == null ? "" : owner.leaseRef);
+                      owner.leases.isEmpty() ? "" : owner.leases.getLast().reference());
                 })
             .toList();
     List<VerdictReport.Edge> edges = new ArrayList<>();
@@ -607,9 +605,7 @@ public final class AnalyzerEngine {
     private String blockInvocation;
     private String blockRef;
     private long blockStartMs;
-    private String leaseRef;
-    private long leaseObservedMs;
-    private long leaseExpiryMs;
+    private final List<LeaseState> leases = new ArrayList<>();
     private boolean cancelPending;
     private boolean ended;
 
@@ -621,7 +617,23 @@ public final class AnalyzerEngine {
       this.acquireRef = acquireRef;
       this.acquireStartMs = acquireStartMs;
     }
+
+    /**
+     * Any lease of the current block whose epsilon-narrowed validity [observed+ε, expiry−ε]
+     * contains the endpoint; each lease asserts the block only from its emission onward.
+     */
+    private LeaseState leaseCovering(long endpointMs, long epsilonMs) {
+      for (LeaseState lease : leases) {
+        if (lease.observedMs() + epsilonMs <= endpointMs
+            && endpointMs <= lease.expiryMs() - epsilonMs) {
+          return lease;
+        }
+      }
+      return null;
+    }
   }
+
+  private record LeaseState(String reference, long observedMs, long expiryMs) {}
 
   private record WaitState(
       String invocationId, String instanceId, String resourceId, long startMs) {}
