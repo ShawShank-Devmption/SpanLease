@@ -172,6 +172,33 @@ class AdapterGrpcTest {
     }
   }
 
+  @Test
+  void deadlineBeforeAdapterAdmissionCannotLeaveAQueuedJob() throws Exception {
+    try (Fixture f = new Fixture()) {
+      f.bGate.submit("occupier", () -> await(f.allowExit));
+      f.delayAdmission.set(true);
+      var call = f.call(2_000);
+      await(f.dispatchEntered);
+      assertThat(call.get(10, TimeUnit.SECONDS)).isEqualTo(Status.Code.DEADLINE_EXCEEDED);
+      await(f.beforeAdmissionCancelled);
+      f.allowAdmission.countDown();
+      await(f.admissionFinished);
+      assertThat(f.bGate.snapshot().waitingCount()).isZero();
+      assertThat(f.bEvents.stream().filter(e -> e.eventType() == EventType.RESOURCE_ACQUIRE))
+          .hasSize(1);
+      assertThat(
+              f.bEvents.stream()
+                  .map(ObservationEvent::payload)
+                  .filter(EventPayload.ExecutionCancel.class::isInstance)
+                  .map(EventPayload.ExecutionCancel.class::cast))
+          .anySatisfy(
+              cancel -> {
+                assertThat(cancel.invocationId()).isEqualTo("downstream");
+                assertThat(cancel.executionId()).isEmpty();
+              });
+    }
+  }
+
   private static Metadata headers(String invocation) {
     Metadata headers = new Metadata();
     headers.put(key("sl-invocation-id"), invocation);
@@ -194,6 +221,12 @@ class AdapterGrpcTest {
   }
 
   private static final class Fixture implements AutoCloseable {
+    final java.util.concurrent.atomic.AtomicBoolean delayAdmission =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    final CountDownLatch dispatchEntered = new CountDownLatch(1);
+    final CountDownLatch beforeAdmissionCancelled = new CountDownLatch(1);
+    final CountDownLatch allowAdmission = new CountDownLatch(1);
+    final CountDownLatch admissionFinished = new CountDownLatch(1);
     final List<ObservationEvent> aEvents = new CopyOnWriteArrayList<>();
     final List<ObservationEvent> bEvents = new CopyOnWriteArrayList<>();
     final CountDownLatch handlerEntered = new CountDownLatch(1);
@@ -217,6 +250,12 @@ class AdapterGrpcTest {
           new ChainGrpc.ChainImplBase() {
             @Override
             public void call(CallRequest request, StreamObserver<CallReply> response) {
+              if (delayAdmission.get()) {
+                Context.current()
+                    .addListener(ignored -> beforeAdmissionCancelled.countDown(), Runnable::run);
+                dispatchEntered.countDown();
+                await(allowAdmission);
+              }
               adapter.handleUnary(
                   request,
                   response,
@@ -225,6 +264,7 @@ class AdapterGrpcTest {
                     await(allowHandler);
                     return CallReply.getDefaultInstance();
                   });
+              admissionFinished.countDown();
             }
           };
       ServerInterceptor closeBoundary =
@@ -321,6 +361,7 @@ class AdapterGrpcTest {
 
     @Override
     public void close() throws Exception {
+      allowAdmission.countDown();
       allowHandler.countDown();
       allowTransport.countDown();
       allowExit.countDown();

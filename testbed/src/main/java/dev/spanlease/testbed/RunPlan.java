@@ -46,6 +46,10 @@ public record RunPlan(
   }
 
   public static RunPlan create(Scenario scenario, long nowMs) {
+    return create(scenario, nowMs, true);
+  }
+
+  public static RunPlan create(Scenario scenario, long nowMs, boolean instrumented) {
     String epoch = UUID.randomUUID().toString();
     String runId = scenario.name() + "-" + epoch.substring(0, 8);
     String driver = "driver-0@" + epoch;
@@ -72,7 +76,7 @@ public record RunPlan(
           for (int slot = 0; slot < scenario.capacities().get(service); slot++) {
             units.add(instance + ":" + POOL + ":slot-" + slot);
           }
-          pools.add(new RunManifest.Pool(instance, POOL, units, true));
+          pools.add(new RunManifest.Pool(instance, POOL, units, instrumented));
         });
     RunManifest.Parameters parameters =
         new RunManifest.Parameters(

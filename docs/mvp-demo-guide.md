@@ -169,7 +169,42 @@ caller's dependency. Concurrent reuse of an otherwise valid invocation ID is rej
 by the gate. The decoder accepts a present OTLP `AnyValue` with no value set only when
 the corresponding JSON string is empty; absent attributes or nonempty mismatches fail.
 
-Remaining work includes complete independent gate truth and the bare/instrumented
-switch, additional workload scenarios, loss/skew/crash injection, deterministic replay,
-proof review, SDK retry/overload tests and the remaining analyzer races. CI execution
-of these MVP regressions does not establish G1/G2 acceptance or detector soundness.
+The extended implementation below adds independent gate truth, both modes, scenario and
+fault matrices, replay and SDK regressions. Research acceptance still requires the
+proof/baseline/experiment reviews tracked in tasks.md. CI execution does not establish
+G1/G2 acceptance or detector soundness.
+
+## Extended runtime, truth, replay and evaluation
+
+The shared gate now supports a true bare mode (no telemetry DTO/sequence allocation,
+metadata or scanner). An independent bounded truth recorder observes ready, queue,
+assignment, run, cancellation/rejection, response, actual exit, release and final
+physical snapshots in both modes. Its own job IDs and ordinals are independent of
+SpanLease; evaluator-only mappings are separate artifacts.
+
+```sh
+./gradlew :testbed:scenario --args='coordinated-ring-n3-k2 instrumented eval/results/manual 42'
+./gradlew :testbed:scenario --args='slow-chain bare eval/results/manual 42'
+./gradlew :testbed:integrationTest --tests dev.spanlease.testbed.WorkloadMatrixTest
+./gradlew :testbed:integrationTest --tests dev.spanlease.testbed.FaultMatrixTest
+./gradlew :testbed:integrationTest --tests dev.spanlease.testbed.CrashIntegrationTest
+```
+
+The coordinated ring fills all six initial slots, releases every setup waiter, then
+measures the six queued leaves and their owners. The rest of the matrix covers finite
+serial k=2 saturation, slow/no-cycle/spare-capacity negatives, newer upstream/disjoint
+waits, queue rejection and externally sourced hotel-search paths. The crash test kills
+a real service JVM and marks its last truth snapshot truncated. No post-crash release
+is inferred. Source/receipt loss and stale checkpoints block confirmation.
+
+Every instrumented scenario produces `observations.replay.json`, with exact delivery
+and evaluation context. `:analyzer:replay` re-emits the same reports without networking
+or truth. New schema-v2 golden fixtures live in `fixtures/replays`; old v1 YAML is not
+silently reinterpreted. `:baselines:replay` compares native SDK span information and
+finite triggered-buffer retention, with weaker cycle/saturation alarms labeled as
+such. See `eval/README.md`, `eval/protocol.md`, `docs/external-workload.md` and
+`docs/correctness-argument.md` for reproduction commands and evidence boundaries.
+
+The remaining research acceptance includes proof review, independent live baseline
+costs, active DDMon adaptation, mechanism ablations, broad replica/load/fault runs,
+clock/scheduler qualification, reproducibility review and the final manuscript.

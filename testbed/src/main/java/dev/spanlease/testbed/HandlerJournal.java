@@ -9,9 +9,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * Application-boundary journal written by the Chain handler itself. It never reads SpanLease
  * events, sequences, leases or analyzer output, and the evaluator alone joins it to reports.
  *
- * <p>This is partial A-TRUTH: it records handler boundaries (run, downstream call enter/return,
- * handler return) but not gate assignment/release decisions, and it is not yet usable with
- * SpanLease disabled.
+ * <p>This compact journal supplies the human demo's handler intervals in both modes. The separate
+ * {@link TruthRecorder} supplies full physical gate decisions and independent job/slot identities;
+ * evaluator-only detector associations live in {@link EvaluationMappings}.
  */
 public final class HandlerJournal {
   private final ConcurrentLinkedQueue<Entry> entries = new ConcurrentLinkedQueue<>();

@@ -2,8 +2,10 @@
 
 Research prototype for persistent circular waits across blocking unary RPCs and
 bounded Java application worker pools. Read requirements.md, design.md, tasks.md and
-AGENTS.md before contributing. The detector is not implemented or validated yet;
-contract v2 awaits G0 review.
+AGENTS.md before contributing. The finite-run detector, bare/instrumented testbed,
+independent gate truth, replay and automated regressions are implemented. Contract v2
+was frozen by solo role-based G0 review (D13/D14); research acceptance G1–G3 remains
+pending.
 
 ## Build (A-BOOT)
 
@@ -44,10 +46,10 @@ and these integration tests and uploads their reports and live-run evidence.
 G0's solo review is recorded in `docs/stage0-g0-review.md`; these MVP regressions
 do not establish G1 or G2 acceptance.
 
-## Pre-G0 model MVP
+## Historical pre-G0 model MVP
 
-An executable Java 21 model demonstrates conservative verdict selection without
-freezing the pending v2 wire/report contracts:
+The earlier executable Java 21 test-source model demonstrates conservative verdict
+selection. It predates the schema-v2 production implementation:
 
 ```sh
 ./gradlew :analyzer:modelMvp
@@ -78,3 +80,12 @@ See [verification evidence](docs/bootstrap-verification.md) and tasks.md for sta
 
 Review these artifacts, then commit/push on the team's agreed branch. Local creation
 alone does not update the remote or unblock a developer who lacks the artifacts.
+
+## Extended finite-run tooling
+
+The bare/instrumented workload runner, independent gate truth, fault/crash regressions,
+exact replay, native-span baseline information comparisons and run-level pilot statistics
+are documented in [`eval/README.md`](eval/README.md). The correctness argument and its
+review limits are in [`docs/correctness-argument.md`](docs/correctness-argument.md).
+`tasks.md` distinguishes implemented engineering evidence from pending research gates,
+live baseline/ablation work, publication-scale experiments and manuscript acceptance.

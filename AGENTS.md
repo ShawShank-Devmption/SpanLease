@@ -18,9 +18,9 @@ without their evidence.
 
 The 2026-09-19 revised requirements/design are the current implementation baseline;
 the revision-2 proposal PDF is historical motivation, not authority to restore a
-superseded defect. The revised event/report contract is **v2 pending G0 all-developer
-sign-off**. Do not assert that approval exists or silently mix old v1 replay fixtures
-with new semantics. Later contract changes still require review and versioning.
+superseded defect. D13/D14 record **v2 frozen for solo implementation** under role-based
+self-review, not independent three-person sign-off. G1–G3 remain separate acceptance
+gates. Do not silently mix historical v1 replay fixtures with new semantics. Later contract changes still require review and versioning.
 
 ## Ownership and execution order
 
@@ -82,8 +82,7 @@ Truth-to-observation mapping belongs exclusively in the evaluation harness.
 
 Event/manifest/replay/report changes require a contract-tagged PR and all three
 developers' approval. Wire-visible changes bump schema_version and migrate fixtures
-explicitly. The v2 design in this revision is a **review candidate**, not an exception
-to that rule. Do not repurpose attributes or invent undocumented control observations.
+explicitly. The D14 implementation freeze is not an exception to the rule for later changes. Do not repurpose attributes or invent undocumented control observations.
 
 Append a decision in the same change whenever resolving ambiguity or changing a
 contract/architecture. Never rewrite prior decision entries; supersede them.
@@ -106,9 +105,9 @@ its targeted test in the same implementation change. Use latches/barriers/virtua
 never sleeps-for-sync. Independent oracles must not reuse production reducer logic.
 
 Read `docs/scenario-truth-spec.md` for the A-SPEC lifecycle/truth handoff and its
-pending acceptance status. Bootstrap tests are not detector correctness tests.
-`./gradlew integrationTest` becomes mandatory when I-CI adds the real litmus suite;
-do not create a no-op task to imply that suite exists. See README.md for toolchain
+recorded acceptance status. Bootstrap tests are not detector correctness tests.
+`./gradlew :testbed:integrationTest` runs the real litmus/workload/fault/crash suites
+and is mandatory for end-to-end behavior changes; never replace it with a no-op. See README.md for toolchain
 setup and `docs/bootstrap-verification.md` for actual verification evidence.
 
 Two real integration litmus tests are mandatory after G2:

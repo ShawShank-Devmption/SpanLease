@@ -17,6 +17,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build, format check, unit + property tests
         run: ./gradlew --no-daemon build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Evaluation statistics checks
+        run: python3 -m unittest discover -s eval/tests -v
       - name: Real gRPC and OTLP analyzer-process litmus tests
         run: ./gradlew --no-daemon :testbed:integrationTest
       - name: Upload test results and live-run evidence

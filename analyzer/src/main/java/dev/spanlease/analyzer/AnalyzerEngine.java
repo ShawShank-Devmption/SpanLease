@@ -28,10 +28,20 @@ import java.util.TreeSet;
  */
 public final class AnalyzerEngine {
   private final RunManifest manifest;
+  private final long historyLimit;
+  private long historySize;
+  private boolean historyLimitExceeded;
   private final Map<String, TreeMap<Long, ObservationEnvelope>> streams = new LinkedHashMap<>();
   private final Set<String> invalidInstances = new TreeSet<>();
 
   public AnalyzerEngine(RunManifest manifest) {
+    this(manifest, 1_000_000);
+  }
+
+  /** Finite-history budget; exhausting it permanently disables confirmation for this run. */
+  public AnalyzerEngine(RunManifest manifest, long historyLimit) {
+    if (historyLimit <= 0) throw new IllegalArgumentException("positive history limit required");
+    this.historyLimit = historyLimit;
     this.manifest = Objects.requireNonNull(manifest, "manifest");
     for (RunManifest.Instance instance : manifest.instances()) {
       streams.put(instance.instanceId(), new TreeMap<>());
@@ -46,6 +56,13 @@ public final class AnalyzerEngine {
       throw new IllegalArgumentException(
           "event instance is outside manifest: " + event.instanceId());
     }
+    if (!stream.containsKey(event.localSeq())) {
+      if (historySize >= historyLimit) {
+        historyLimitExceeded = true;
+        return;
+      }
+      historySize++;
+    }
     ObservationEnvelope existing = stream.putIfAbsent(event.localSeq(), envelope);
     if (existing != null && !existing.event().equals(event)) {
       invalidInstances.add(event.instanceId());
@@ -53,6 +70,24 @@ public final class AnalyzerEngine {
   }
 
   public VerdictReport evaluate(long evaluationWallMs) {
+    if (historyLimitExceeded) {
+      return report(
+          Verdict.CANDIDATE_INCONCLUSIVE,
+          evaluationWallMs,
+          Map.of(),
+          null,
+          emptyCore(),
+          coverage(List.of(new VerdictReport.MissingEvidence("HISTORY_LIMIT", manifest.runId()))));
+    }
+    if (manifest.instances().isEmpty() || manifest.pools().isEmpty()) {
+      return report(
+          Verdict.INSUFFICIENT_OBSERVABILITY,
+          evaluationWallMs,
+          Map.of(),
+          null,
+          emptyCore(),
+          coverage(List.of(new VerdictReport.MissingEvidence("EMPTY_SCOPE", manifest.runId()))));
+    }
     if (manifest.pools().stream().anyMatch(pool -> !pool.instrumented())) {
       return report(
           Verdict.INSUFFICIENT_OBSERVABILITY,
@@ -113,6 +148,26 @@ public final class AnalyzerEngine {
 
     Set<String> residual = reduce(state);
     if (residual.isEmpty()) {
+      List<VerdictReport.MissingEvidence> leases = new ArrayList<>();
+      for (String id : state.blockedExecutions()) {
+        ExecutionState execution = state.executions.get(id);
+        String instance = EventReference.parse(execution.acquireRef).orElseThrow().instanceId();
+        long endpoint =
+            certification.checkpoints().get(instance).event().wallTimeMs()
+                - manifest.parameters().epsilonMs();
+        if (execution.leaseCovering(endpoint, manifest.parameters().epsilonMs()) == null) {
+          leases.add(new VerdictReport.MissingEvidence("EXPIRED_LEASE", id));
+        }
+      }
+      if (!leases.isEmpty()) {
+        return report(
+            Verdict.CANDIDATE_INCONCLUSIVE,
+            evaluationWallMs,
+            cutResult.cut(),
+            null,
+            diagnosticCore(state, state.blockedExecutions(), state.waitingInvocations()),
+            coverage(leases));
+      }
       return report(
           Verdict.CONFIRMED_NO_DEADLOCK,
           evaluationWallMs,
@@ -152,7 +207,19 @@ public final class AnalyzerEngine {
     List<VerdictReport.MissingEvidence> missing = new ArrayList<>();
     for (Map.Entry<String, TreeMap<Long, ObservationEnvelope>> entry : streams.entrySet()) {
       String instanceId = entry.getKey();
+      if (manifest.instances().stream()
+          .anyMatch(
+              i ->
+                  i.instanceId().equals(instanceId)
+                      && i.epsilonMs() > manifest.parameters().epsilonMs())) {
+        missing.add(new VerdictReport.MissingEvidence("UNQUALIFIED_CLOCK", instanceId));
+      }
       TreeMap<Long, ObservationEnvelope> stream = entry.getValue();
+      long prefix = contiguousPrefix(stream);
+      if (!stream.isEmpty() && stream.lastKey() > prefix) {
+        missing.add(
+            new VerdictReport.MissingEvidence("SEQUENCE_GAP", instanceId + "#" + (prefix + 1)));
+      }
       ObservationEnvelope checkpoint = null;
       for (ObservationEnvelope envelope :
           stream.headMap(contiguousPrefix(stream), true).descendingMap().values()) {
@@ -168,11 +235,20 @@ public final class AnalyzerEngine {
       }
       cut.put(instanceId, checkpoint.event().localSeq());
       checkpoints.put(instanceId, checkpoint);
+      if (checkpoint.event().wallTimeMs() > evaluationWallMs + manifest.parameters().epsilonMs()) {
+        missing.add(new VerdictReport.MissingEvidence("FUTURE_CHECKPOINT", instanceId));
+      }
       if (evaluationWallMs - checkpoint.receiptWallMs()
           > manifest.parameters().checkpointFreshnessMs()) {
         missing.add(new VerdictReport.MissingEvidence("STALE_CHECKPOINT", instanceId));
       }
-      if (!clockQualified(instanceId, checkpoint.event().wallTimeMs())) {
+      if (evaluationWallMs - checkpoint.event().wallTimeMs()
+          > manifest.parameters().checkpointFreshnessMs() + manifest.parameters().epsilonMs()) {
+        missing.add(new VerdictReport.MissingEvidence("STALE_CHECKPOINT", instanceId));
+      }
+      if (!clockQualified(instanceId, checkpoint.event().wallTimeMs())
+          || stream.headMap(checkpoint.event().localSeq(), true).values().stream()
+              .anyMatch(e -> !clockQualified(instanceId, e.event().wallTimeMs()))) {
         missing.add(new VerdictReport.MissingEvidence("UNQUALIFIED_CLOCK", instanceId));
       }
     }
@@ -221,6 +297,14 @@ public final class AnalyzerEngine {
             continue;
           }
           EventReference parsed = reference.orElseThrow();
+          if (cut.getOrDefault(parsed.instanceId(), 0L) >= parsed.sequence()
+              && !validParent(
+                  envelope.event(),
+                  streams.get(parsed.instanceId()).get(parsed.sequence()).event())) {
+            missing.add(
+                new VerdictReport.MissingEvidence(
+                    "INVALID_CAUSAL_PARENT", envelope.event().eventReference()));
+          }
           if (cut.getOrDefault(parsed.instanceId(), 0L) < parsed.sequence()) {
             cut.put(childInstance, envelope.event().localSeq() - 1);
             changed = true;
@@ -230,6 +314,27 @@ public final class AnalyzerEngine {
       }
     } while (changed);
     return new CutResult(Map.copyOf(cut), List.copyOf(missing));
+  }
+
+  private boolean validParent(ObservationEvent child, ObservationEvent parent) {
+    if (child.payload() instanceof EventPayload.RpcInvocationArrived arrival) {
+      String binding =
+          manifest.instances().stream()
+              .filter(i -> i.instanceId().equals(child.instanceId()))
+              .findFirst()
+              .orElseThrow()
+              .serviceBinding();
+      return parent.payload() instanceof EventPayload.RpcInvocationSent sent
+          && sent.invocationId().equals(arrival.invocationId())
+          && (sent.targetService().equals(binding)
+              || sent.targetService().equals(child.instanceId()));
+    }
+    if (child.payload() instanceof EventPayload.RpcBlockEnd end) {
+      return end.completionKind() == EventPayload.CompletionKind.RESPONSE
+          && parent.payload() instanceof EventPayload.RpcResponseSent response
+          && response.invocationId().equals(end.invocationId());
+    }
+    return false;
   }
 
   private Reconstructed reconstruct(Map<String, Long> cut) {
@@ -261,8 +366,9 @@ public final class AnalyzerEngine {
         state.missing.add(new VerdictReport.MissingEvidence("CANCEL_PENDING", execution.id));
       }
       if (execution.blockInvocation != null && !execution.cancelPending) {
-        if (!state.waiting.containsKey(execution.blockInvocation)
-            && !state.executionByInvocation.containsKey(execution.blockInvocation)) {
+        if (!state.arrivedInvocations.contains(execution.blockInvocation)
+            || (!state.waiting.containsKey(execution.blockInvocation)
+                && !state.executionByInvocation.containsKey(execution.blockInvocation))) {
           state.missing.add(
               new VerdictReport.MissingEvidence("UNKNOWN_COUNTERPART", execution.blockInvocation));
         }
@@ -273,21 +379,63 @@ public final class AnalyzerEngine {
 
   private void apply(Reconstructed state, ObservationEvent event) {
     EventPayload payload = event.payload();
-    if (payload instanceof EventPayload.ResourceInit init) {
+    String executionId =
+        switch (payload) {
+          case EventPayload.RpcBlockBegin e -> e.executionId();
+          case EventPayload.RpcBlockEnd e -> e.executionId();
+          case EventPayload.ExecutionLease e -> e.executionId();
+          case EventPayload.ExecutionEnd e -> e.executionId();
+          case EventPayload.ExecutionCancel e -> e.executionId();
+          case EventPayload.ResourceRelease e -> e.executionId();
+          case EventPayload.RpcResponseSent e -> e.executionId();
+          case EventPayload.RpcInvocationSent e -> e.callerExecutionId();
+          default -> "";
+        };
+    if (!executionId.isEmpty()) {
+      ExecutionState local = state.executions.get(executionId);
+      if (local == null
+          || !EventReference.parse(local.acquireRef)
+              .orElseThrow()
+              .instanceId()
+              .equals(event.instanceId())) {
+        invalid(state, event);
+        return;
+      }
+    }
+    if (payload instanceof EventPayload.RpcInvocationSent sent) {
+      if (!state.sentInvocations.add(sent.invocationId())) invalid(state, event);
+      if (!sent.callerExecutionId().isEmpty()
+          && !sent.invocationId()
+              .equals(state.executions.get(sent.callerExecutionId()).blockInvocation))
+        invalid(state, event);
+    } else if (payload instanceof EventPayload.RpcInvocationArrived arrived) {
+      if (!state.arrivedInvocations.add(arrived.invocationId())) invalid(state, event);
+    } else if (payload instanceof EventPayload.ResourceInit init) {
       String pool = event.instanceId() + ":" + init.resourceId();
       Set<String> declared = state.poolUnits.get(pool);
       if (declared == null || !declared.equals(Set.copyOf(init.unitIds()))) {
         state.missing.add(
             new VerdictReport.MissingEvidence("INVALID_EVENT", event.eventReference()));
-      } else {
-        state.initializedPools.add(pool);
+      } else if (!state.initializedPools.add(pool)) {
+        invalid(state, event);
       }
     } else if (payload instanceof EventPayload.ResourceWaitBegin wait) {
+      if (!state.poolUnits.containsKey(event.instanceId() + ":" + wait.resourceId())
+          || state.waiting.containsKey(wait.invocationId())
+          || state.executionByInvocation.containsKey(wait.invocationId())) invalid(state, event);
       state.waiting.put(
           wait.invocationId(),
           new WaitState(
               wait.invocationId(), event.instanceId(), wait.resourceId(), event.wallTimeMs()));
     } else if (payload instanceof EventPayload.ResourceAcquire acquire) {
+      if (state.executions.containsKey(acquire.executionId())
+          || state.executionByInvocation.containsKey(acquire.invocationId())
+          || manifest.pools().stream()
+              .noneMatch(
+                  p ->
+                      p.instanceId().equals(event.instanceId())
+                          && p.unitIds().contains(acquire.resourceInstanceId())))
+        invalid(state, event);
       state.waiting.remove(acquire.invocationId());
       state.executionByInvocation.put(acquire.invocationId(), acquire.executionId());
       state.executions.put(
@@ -307,7 +455,7 @@ public final class AnalyzerEngine {
       }
     } else if (payload instanceof EventPayload.RpcBlockBegin block) {
       ExecutionState execution = state.executions.get(block.executionId());
-      if (execution == null || execution.blockInvocation != null) {
+      if (execution == null || execution.blockInvocation != null || execution.ended) {
         state.missing.add(
             new VerdictReport.MissingEvidence("INVALID_EVENT", event.eventReference()));
       } else {
@@ -359,10 +507,16 @@ public final class AnalyzerEngine {
       if (!release.executionId().equals(state.unitOwners.get(release.resourceInstanceId()))) {
         state.missing.add(
             new VerdictReport.MissingEvidence("INVALID_EVENT", event.eventReference()));
+      } else if (!state.executions.get(release.executionId()).ended) {
+        invalid(state, event);
       } else {
         state.unitOwners.put(release.resourceInstanceId(), null);
       }
     }
+  }
+
+  private static void invalid(Reconstructed state, ObservationEvent event) {
+    state.missing.add(new VerdictReport.MissingEvidence("INVALID_EVENT", event.eventReference()));
   }
 
   private Set<String> reduce(Reconstructed state) {
@@ -538,7 +692,10 @@ public final class AnalyzerEngine {
             : cut.entrySet().stream()
                 .map(entry -> streams.get(entry.getKey()).get(entry.getValue()))
                 .filter(Objects::nonNull)
-                .map(envelope -> envelope.event().wallTimeMs())
+                .map(
+                    envelope ->
+                        Math.max(
+                            0, envelope.event().wallTimeMs() - manifest.parameters().epsilonMs()))
                 .min(Long::compareTo)
                 .orElse(null);
     return new VerdictReport(
@@ -550,7 +707,47 @@ public final class AnalyzerEngine {
         new VerdictReport.Query(scope, completeCut, horizon),
         persistence,
         core,
-        coverage);
+        observedCoverage(completeCut, coverage.missing()));
+  }
+
+  private VerdictReport.Coverage observedCoverage(
+      Map<String, Long> cut, List<VerdictReport.MissingEvidence> missing) {
+    List<String> unknown = new ArrayList<>();
+    int total = 0;
+    for (RunManifest.Pool pool : manifest.pools()) {
+      total += pool.unitIds().size();
+      boolean initialized =
+          streams
+              .get(pool.instanceId())
+              .headMap(cut.getOrDefault(pool.instanceId(), 0L), true)
+              .values()
+              .stream()
+              .anyMatch(
+                  e ->
+                      e.event().payload() instanceof EventPayload.ResourceInit init
+                          && init.resourceId().equals(pool.resourceId())
+                          && Set.copyOf(init.unitIds()).equals(Set.copyOf(pool.unitIds())));
+      if (!initialized || invalidInstances.contains(pool.instanceId()))
+        unknown.addAll(pool.unitIds());
+    }
+    List<VerdictReport.FrontierGap> gaps = new ArrayList<>();
+    for (var stream : streams.entrySet()) {
+      long expected = 1;
+      for (long received : stream.getValue().keySet()) {
+        if (received > expected)
+          gaps.add(new VerdictReport.FrontierGap(stream.getKey(), expected, received - 1));
+        expected = received + 1;
+      }
+    }
+    List<String> unmatched =
+        missing.stream()
+            .filter(m -> m.code().equals("UNKNOWN_COUNTERPART"))
+            .map(VerdictReport.MissingEvidence::subject)
+            .distinct()
+            .sorted()
+            .toList();
+    return new VerdictReport.Coverage(
+        total, total - unknown.size(), unknown, gaps, unmatched, missing);
   }
 
   private VerdictReport.Coverage coverage(List<VerdictReport.MissingEvidence> missing) {
@@ -679,6 +876,8 @@ public final class AnalyzerEngine {
   }
 
   private static final class Reconstructed {
+    private final Set<String> sentInvocations = new HashSet<>();
+    private final Set<String> arrivedInvocations = new HashSet<>();
     private final Map<String, Set<String>> poolUnits = new HashMap<>();
     private final Map<String, String> unitOwners = new HashMap<>();
     private final Set<String> initializedPools = new HashSet<>();

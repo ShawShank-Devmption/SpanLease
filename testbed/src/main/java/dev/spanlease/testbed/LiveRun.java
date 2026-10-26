@@ -57,8 +57,9 @@ public final class LiveRun {
       progress.accept("analyzer process listening for OTLP on 127.0.0.1:" + port);
       ChainDriver.RootCall root;
       List<HandlerJournal.Entry> journal;
-      try (ChainDeployment deployment =
-          ChainDeployment.start(plan, "http://127.0.0.1:" + port, invocationIds)) {
+      ChainDeployment deployment =
+          ChainDeployment.start(plan, "http://127.0.0.1:" + port, invocationIds);
+      try (deployment) {
         progress.accept(
             "deployed "
                 + scenario.capacities().entrySet().stream()
@@ -94,8 +95,12 @@ public final class LiveRun {
         }
         root.cancel();
         awaitCompletion(root, DRAIN);
-        journal = deployment.journal().entries();
       }
+      journal = deployment.journal().entries();
+      json.writeValue(directory.resolve("truth.json").toFile(), deployment.truth().entries());
+      json.writeValue(directory.resolve("mappings.json").toFile(), deployment.mappings().entries());
+      if (!deployment.truth().scorable())
+        throw new IllegalStateException("truth overflow; run is unscorable");
       long closedAt = System.currentTimeMillis();
       analyzer.awaitReport(report -> report.report().evaluatedAtWallMs() > closedAt, FINAL_REPORT);
 

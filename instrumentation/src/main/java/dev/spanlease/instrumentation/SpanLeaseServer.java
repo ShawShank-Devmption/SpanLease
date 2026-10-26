@@ -40,12 +40,21 @@ public final class SpanLeaseServer {
   private static final Context.Key<String> INBOUND_INVOCATION =
       Context.key("spanlease-inbound-invocation");
 
+  private final java.util.function.BiConsumer<Object, String> bindings;
   private final InstanceRecorder recorder;
   private final SlotTrackingExecutor gate;
   private final Supplier<String> localInvocationIds;
   private final ServerInterceptor responseClose = new ResponseCloseInterceptor();
 
   public SpanLeaseServer(SlotTrackingExecutor gate, Supplier<String> localInvocationIds) {
+    this(gate, localInvocationIds, (job, invocation) -> {});
+  }
+
+  public SpanLeaseServer(
+      SlotTrackingExecutor gate,
+      Supplier<String> localInvocationIds,
+      java.util.function.BiConsumer<Object, String> bindings) {
+    this.bindings = Objects.requireNonNull(bindings, "bindings");
     this.gate = Objects.requireNonNull(gate, "gate");
     this.recorder = gate.recorder();
     this.localInvocationIds = Objects.requireNonNull(localInvocationIds, "localInvocationIds");
@@ -76,6 +85,14 @@ public final class SpanLeaseServer {
    */
   public <Q, R> void handleUnary(
       Q request, StreamObserver<R> responseObserver, UnaryHandler<Q, R> handler) {
+    handleUnary(request, responseObserver, handler, null);
+  }
+
+  public <Q, R> void handleUnary(
+      Q request,
+      StreamObserver<R> responseObserver,
+      UnaryHandler<Q, R> handler,
+      Object applicationJob) {
     Objects.requireNonNull(handler, "handler");
     ServerCallStreamObserver<R> call = (ServerCallStreamObserver<R>) responseObserver;
     String invocationId = INBOUND_INVOCATION.get();
@@ -86,6 +103,7 @@ public final class SpanLeaseServer {
               .asRuntimeException());
       return;
     }
+    bindings.accept(applicationJob, invocationId);
     Context callContext = Context.current();
     call.setOnCancelHandler(
         () ->
@@ -102,11 +120,25 @@ public final class SpanLeaseServer {
     try {
       admission =
           gate.submit(
-              invocationId, execution -> run(execution, request, call, callContext, handler));
+              invocationId,
+              execution -> run(execution, request, call, callContext, handler),
+              applicationJob);
     } catch (IllegalStateException duplicate) {
       call.onError(
           Status.INTERNAL.withDescription("duplicate invocation identity").asRuntimeException());
       return;
+    }
+    // Cancellation can arrive before registration/submission, when the gate has no job to find.
+    // Recheck after the atomic admission decision so that a pre-cancelled queue entry cannot leak.
+    if (call.isCancelled() || callContext.isCancelled()) {
+      gate.requestCancellation(
+          invocationId,
+          deadlineExpired(callContext)
+              ? EventPayload.CancelSource.DEADLINE
+              : EventPayload.CancelSource.CLIENT,
+          deadlineExpired(callContext)
+              ? EventPayload.CancelReason.DEADLINE
+              : EventPayload.CancelReason.REQUESTED);
     }
     if (admission == SlotTrackingExecutor.Admission.REJECTED) {
       call.onError(
@@ -117,6 +149,7 @@ public final class SpanLeaseServer {
   }
 
   private String recordArrival(Metadata headers) {
+    if (!recorder.enabled()) return localInvocationIds.get();
     Optional<String> invocationId = RpcMetadata.invocationId(headers);
     Optional<String> requestReference = RpcMetadata.requestReference(headers);
     if (invocationId.isEmpty() || requestReference.isEmpty()) {
@@ -191,8 +224,8 @@ public final class SpanLeaseServer {
             @Override
             public void close(Status status, Metadata trailers) {
               if (responded.compareAndSet(false, true)) {
-                RpcMetadata.putResponse(
-                    trailers, gate.responseSent(invocationId, RpcMetadata.outcome(status)));
+                String reference = gate.responseSent(invocationId, RpcMetadata.outcome(status));
+                if (recorder.enabled()) RpcMetadata.putResponse(trailers, reference);
               }
               super.close(status, trailers);
             }

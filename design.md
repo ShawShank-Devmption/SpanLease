@@ -1,7 +1,8 @@
 # SpanLease — Technical Design
 
 Revision: 2026-09-19. Implements the revised `requirements.md`.
-**Contract v2 is specified here for review; G0 all-developer approval is still pending.**
+**Contract v2 was frozen for solo implementation under D13/D14 on 2026-09-22.
+This is role-based self-review, not independent three-person approval; G1–G3 remain pending.**
 Do not implement a mixture of v1 fixtures and v2 semantics or claim this design is proved.
 
 ## 1. Architecture and scope
@@ -81,10 +82,11 @@ State machines:
 
 ## 4. Version 2 observation contract
 
-**Approval gate:** this is a proposed replacement for v1, requiring a contract-tagged
-PR, A/B/C sign-off and migration of fixtures before implementation freeze. Thirteen
-record types use the same unsampled LogRecord pipeline. No hidden control channel or
-ground-truth input supplies missing evidence.
+**Contract baseline:** D13/D14 record the solo A/B/C role review and G0 implementation
+freeze. Later wire-visible changes still require contract review and schema versioning.
+Thirteen record types use the same unsampled LogRecord pipeline. No hidden control
+channel or ground-truth input supplies missing evidence. New v2 JSON replay fixtures
+are separate from the historical v1 YAML.
 
 Common attributes on every record:
 

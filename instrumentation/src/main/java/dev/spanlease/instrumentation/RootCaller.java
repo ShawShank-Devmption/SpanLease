@@ -26,6 +26,7 @@ public final class RootCaller {
   public <S extends AbstractStub<S>, R> R call(String targetService, S stub, Function<S, R> rpc) {
     Objects.requireNonNull(stub, "stub");
     Objects.requireNonNull(rpc, "rpc");
+    if (!recorder.enabled()) return rpc.apply(stub);
     String invocationId = invocationIds.get();
     ObservationEvent sent =
         recorder.publish(new EventPayload.RpcInvocationSent(invocationId, "", targetService), "");

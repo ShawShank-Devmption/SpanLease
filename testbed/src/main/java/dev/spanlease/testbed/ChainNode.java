@@ -50,6 +50,7 @@ public final class ChainNode implements AutoCloseable {
   private static final long MAX_DURATION_MS = 600_000;
   private static final long WORK_SLICE_MS = 20;
 
+  private volatile java.util.function.Consumer<TruthRecorder.Job> setup = job -> {};
   private final String serviceName;
   private final InstanceRecorder recorder;
   private final SlotTrackingExecutor gate;
@@ -57,6 +58,8 @@ public final class ChainNode implements AutoCloseable {
   private final SpanLeaseServer spanLease;
   private final SpanLeaseClient client;
   private final HandlerJournal journal;
+  private final TruthRecorder truth;
+  private final EvaluationMappings mappings;
   private final ExecutorService callbacks;
   private final Server server;
   private final Map<String, ManagedChannel> peers = new ConcurrentHashMap<>();
@@ -68,28 +71,44 @@ public final class ChainNode implements AutoCloseable {
       RunManifest.Parameters parameters,
       EventSink sink,
       Supplier<String> invocationIds,
-      HandlerJournal journal)
+      HandlerJournal journal,
+      TruthRecorder truth,
+      boolean instrumented,
+      int queueCapacity,
+      EvaluationMappings mappings)
       throws IOException {
     this.serviceName = Objects.requireNonNull(serviceName, "serviceName");
     this.journal = Objects.requireNonNull(journal, "journal");
-    this.recorder = new InstanceRecorder(instanceId, sink, Clock.systemUTC(), System::nanoTime);
+    this.truth = truth;
+    this.mappings = mappings;
+    this.recorder =
+        instrumented
+            ? new InstanceRecorder(instanceId, sink, Clock.systemUTC(), System::nanoTime)
+            : InstanceRecorder.disabled(instanceId, Clock.systemUTC(), System::nanoTime);
     this.gate =
         new SlotTrackingExecutor(
-            recorder, RunPlan.POOL, capacity, WAITING_CAPACITY, threads(serviceName + "-worker"));
+            recorder,
+            RunPlan.POOL,
+            capacity,
+            queueCapacity,
+            threads(serviceName + "-worker"),
+            truth.gate(serviceName));
     LeasePolicy leases =
         new LeasePolicy(
             parameters.leaseAgeThresholdMs(),
             LeasePolicy.DEFAULT.renewalMs(),
             LeasePolicy.DEFAULT.expiryFactor());
     this.scanner =
-        new PeriodicScanner(
-            recorder,
-            List.of(gate),
-            leases,
-            Duration.ofMillis(Math.min(leases.ageThresholdMs(), leases.renewalMs()) / 2),
-            Duration.ofMillis(parameters.checkpointIntervalMs()),
-            serviceName + "-scanner");
-    this.spanLease = new SpanLeaseServer(gate, invocationIds);
+        !instrumented
+            ? null
+            : new PeriodicScanner(
+                recorder,
+                List.of(gate),
+                leases,
+                Duration.ofMillis(Math.min(leases.ageThresholdMs(), leases.renewalMs()) / 2),
+                Duration.ofMillis(parameters.checkpointIntervalMs()),
+                serviceName + "-scanner");
+    this.spanLease = new SpanLeaseServer(gate, invocationIds, mappings::inbound);
     this.client = new SpanLeaseClient(gate, invocationIds);
     this.callbacks = Executors.newFixedThreadPool(2, threads(serviceName + "-grpc-callback"));
     this.server =
@@ -111,8 +130,52 @@ public final class ChainNode implements AutoCloseable {
       Supplier<String> invocationIds,
       HandlerJournal journal)
       throws IOException {
+    return start(
+        serviceName,
+        instanceId,
+        capacity,
+        parameters,
+        sink,
+        invocationIds,
+        journal,
+        new TruthRecorder(Clock.systemUTC(), 100_000),
+        true,
+        WAITING_CAPACITY,
+        new EvaluationMappings());
+  }
+
+  public static ChainNode start(
+      String serviceName,
+      String instanceId,
+      int capacity,
+      RunManifest.Parameters parameters,
+      EventSink sink,
+      Supplier<String> invocationIds,
+      HandlerJournal journal,
+      TruthRecorder truth,
+      boolean instrumented,
+      int queueCapacity,
+      EvaluationMappings mappings)
+      throws IOException {
     return new ChainNode(
-        serviceName, instanceId, capacity, parameters, sink, invocationIds, journal);
+        serviceName,
+        instanceId,
+        capacity,
+        parameters,
+        sink,
+        invocationIds,
+        journal,
+        truth,
+        instrumented,
+        queueCapacity,
+        mappings);
+  }
+
+  /**
+   * Install before sending roots; setup barriers must leave before any scored positive interval.
+   */
+  public void setup(java.util.function.Consumer<TruthRecorder.Job> setup) {
+    this.setup = Objects.requireNonNull(setup);
   }
 
   public String serviceName() {
@@ -147,7 +210,7 @@ public final class ChainNode implements AutoCloseable {
     peers.values().forEach(ManagedChannel::shutdownNow);
     gate.close();
     recorder.checkpoint();
-    scanner.close();
+    if (scanner != null) scanner.close();
     server.awaitTermination(5, TimeUnit.SECONDS);
     for (ManagedChannel channel : peers.values()) {
       channel.awaitTermination(5, TimeUnit.SECONDS);
@@ -156,10 +219,13 @@ public final class ChainNode implements AutoCloseable {
     callbacks.awaitTermination(5, TimeUnit.SECONDS);
   }
 
-  private CallReply handle(SlotTrackingExecutor.ExecutionContext execution, CallRequest request) {
+  private CallReply handle(
+      SlotTrackingExecutor.ExecutionContext execution, CallRequest request, TruthRecorder.Job job) {
+    mappings.execution(job, execution);
     int remaining = request.getRemainingCount();
     journal.record(serviceName, request.getRequestId(), remaining, HandlerJournal.Boundary.RUN);
     try {
+      setup.accept(job);
       Hop hop = request.getRemaining(0);
       work(Integer.toUnsignedLong(hop.getWorkMs()));
       int hopsCompleted = 1;
@@ -179,11 +245,13 @@ public final class ChainNode implements AutoCloseable {
         journal.record(
             serviceName, request.getRequestId(), remaining, HandlerJournal.Boundary.CALL_ENTER);
         CallReply reply;
+        truth.record(job, "CALL_ENTER");
         try {
           reply =
               client.call(
                   execution, next, ChainGrpc.newBlockingStub(channel), stub -> stub.call(tail));
         } finally {
+          truth.record(job, "CALL_RETURN");
           journal.record(
               serviceName, request.getRequestId(), remaining, HandlerJournal.Boundary.CALL_RETURN);
         }
@@ -252,7 +320,10 @@ public final class ChainNode implements AutoCloseable {
             Status.INVALID_ARGUMENT.withDescription(invalid).asRuntimeException());
         return;
       }
-      spanLease.handleUnary(request, responseObserver, ChainNode.this::handle);
+      TruthRecorder.Job job =
+          truth.job(serviceName, request.getRequestId(), request.getRemainingCount());
+      spanLease.handleUnary(
+          request, responseObserver, (execution, value) -> handle(execution, value, job), job);
     }
   }
 }

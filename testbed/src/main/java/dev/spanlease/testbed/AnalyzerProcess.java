@@ -63,7 +63,9 @@ public final class AnalyzerProcess implements AutoCloseable {
                 "--port",
                 "0",
                 "--emit",
-                "all")
+                "all",
+                "--record",
+                manifestFile.resolveSibling("observations.replay.json").toString())
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start();
     return new AnalyzerProcess(process, Objects.requireNonNull(listener, "listener"));
@@ -76,6 +78,10 @@ public final class AnalyzerProcess implements AutoCloseable {
     } catch (ExecutionException failure) {
       throw new IllegalStateException("analyzer failed to start", failure.getCause());
     }
+  }
+
+  public long cpuNanos() {
+    return process.info().totalCpuDuration().orElse(Duration.ZERO).toNanos();
   }
 
   public List<TimedReport> reports() {

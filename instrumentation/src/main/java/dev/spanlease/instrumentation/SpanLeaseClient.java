@@ -45,6 +45,7 @@ public final class SpanLeaseClient {
       Function<S, R> rpc) {
     Objects.requireNonNull(stub, "stub");
     Objects.requireNonNull(rpc, "rpc");
+    if (!gate.recorder().enabled()) return rpc.apply(stub);
     String invocationId = invocationIds.get();
     SlotTrackingExecutor.BlockHandle block = gate.openBlock(execution, invocationId, targetService);
     AtomicReference<Metadata> trailers = new AtomicReference<>();

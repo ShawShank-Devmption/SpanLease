@@ -30,6 +30,11 @@ dependencies {
     implementation(libs.grpc.stub)
     implementation(libs.protobuf.java)
     analyzerRuntime(project(":analyzer"))
+    testImplementation(platform(libs.otel.bom))
+    testImplementation(libs.otel.sdk)
+    testImplementation(libs.otel.sdk.logs)
+    testImplementation(libs.otel.exporter.otlp)
+    testImplementation(libs.otel.proto)
 }
 
 protobuf {
@@ -70,4 +75,22 @@ tasks.register<JavaExec>("liveDemo") {
     jvmArgumentProviders.add(analyzerClasspath)
     workingDir = layout.buildDirectory.get().asFile
     doFirst { workingDir.mkdirs() }
+}
+
+tasks.register<JavaExec>("scenario") {
+    group = "application"
+    description = "Finite workload runner: --args='workload bare|instrumented output-directory seed'."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("dev.spanlease.testbed.ScenarioRunner")
+    inputs.files(analyzerRuntime)
+    jvmArgumentProviders.add(analyzerClasspath)
+}
+
+tasks.register<JavaExec>("experiments") {
+    group = "application"
+    description = "Run a recorded finite plan: --args='pilot|matrix repetitions output-directory'."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("dev.spanlease.testbed.ExperimentMain")
+    inputs.files(analyzerRuntime)
+    jvmArgumentProviders.add(analyzerClasspath)
 }

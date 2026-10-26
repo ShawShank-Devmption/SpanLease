@@ -29,6 +29,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public final class SlotTrackingExecutor implements AutoCloseable {
   private final InstanceRecorder recorder;
+  private final GateObserver observer;
   private final ReentrantLock stateLock;
   private final SequencedMap<String, PendingJob> waiting = new LinkedHashMap<>();
   private final Map<String, Execution> ownerByUnit = new LinkedHashMap<>();
@@ -46,6 +47,17 @@ public final class SlotTrackingExecutor implements AutoCloseable {
       int capacity,
       int waitingCapacity,
       ThreadFactory threadFactory) {
+    this(recorder, resourceId, capacity, waitingCapacity, threadFactory, GateObserver.NONE);
+  }
+
+  public SlotTrackingExecutor(
+      InstanceRecorder recorder,
+      String resourceId,
+      int capacity,
+      int waitingCapacity,
+      ThreadFactory threadFactory,
+      GateObserver observer) {
+    this.observer = Objects.requireNonNull(observer, "observer");
     this.recorder = Objects.requireNonNull(recorder, "recorder");
     this.stateLock = recorder.lock();
     this.resourceId = requireId(resourceId, "resourceId");
@@ -65,7 +77,9 @@ public final class SlotTrackingExecutor implements AutoCloseable {
 
     stateLock.lock();
     try {
-      recorder.publishLocked(new EventPayload.ResourceInit(resourceId, capacity, unitIds), "");
+      observer.observe(GateObserver.Transition.INIT, null, capacity);
+      if (recorder.enabled())
+        recorder.publishLocked(new EventPayload.ResourceInit(resourceId, capacity, unitIds), "");
     } finally {
       stateLock.unlock();
     }
@@ -101,6 +115,10 @@ public final class SlotTrackingExecutor implements AutoCloseable {
    *     invocation identity maps to at most one current job on an instance
    */
   public Admission submit(String invocationId, ExecutionTask task) {
+    return submit(invocationId, task, null);
+  }
+
+  public Admission submit(String invocationId, ExecutionTask task, Object applicationJob) {
     requireId(invocationId, "invocationId");
     Objects.requireNonNull(task, "task");
 
@@ -110,19 +128,22 @@ public final class SlotTrackingExecutor implements AutoCloseable {
       if (waiting.containsKey(invocationId) || activeByInvocation.containsKey(invocationId)) {
         throw new IllegalStateException("invocation already admitted: " + invocationId);
       }
+      observer.observe(GateObserver.Transition.READY, applicationJob, -1);
       if (closed.get()) {
-        return rejectLocked(invocationId);
+        return rejectLocked(invocationId, applicationJob);
       }
       String freeUnit = firstFreeUnitLocked();
       if (freeUnit == null) {
         if (waiting.size() >= waitingCapacity) {
-          return rejectLocked(invocationId);
+          return rejectLocked(invocationId, applicationJob);
         }
-        waiting.put(invocationId, new PendingJob(invocationId, task));
-        recorder.publishLocked(new EventPayload.ResourceWaitBegin(invocationId, resourceId), "");
+        waiting.put(invocationId, new PendingJob(invocationId, task, applicationJob));
+        observer.observe(GateObserver.Transition.QUEUE, applicationJob, -1);
+        if (recorder.enabled())
+          recorder.publishLocked(new EventPayload.ResourceWaitBegin(invocationId, resourceId), "");
         return Admission.QUEUED;
       }
-      assigned = assignLocked(freeUnit, new PendingJob(invocationId, task));
+      assigned = assignLocked(freeUnit, new PendingJob(invocationId, task, applicationJob));
     } finally {
       stateLock.unlock();
     }
@@ -143,17 +164,22 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     Objects.requireNonNull(reason, "reason");
     stateLock.lock();
     try {
-      if (waiting.remove(invocationId) != null) {
-        recorder.publishLocked(
-            new EventPayload.ExecutionCancel("", invocationId, source, reason), "");
+      PendingJob removed = waiting.remove(invocationId);
+      if (removed != null) {
+        observer.observe(GateObserver.Transition.CANCEL, removed.applicationJob(), -1);
+        if (recorder.enabled())
+          recorder.publishLocked(
+              new EventPayload.ExecutionCancel("", invocationId, source, reason), "");
         return;
       }
       Execution execution = activeByInvocation.get(invocationId);
       if (execution != null && !execution.cancelRecorded) {
         execution.cancelRecorded = true;
-        recorder.publishLocked(
-            new EventPayload.ExecutionCancel(execution.executionId, invocationId, source, reason),
-            "");
+        observe(GateObserver.Transition.CANCEL, execution);
+        if (recorder.enabled())
+          recorder.publishLocked(
+              new EventPayload.ExecutionCancel(execution.executionId, invocationId, source, reason),
+              "");
       }
     } finally {
       stateLock.unlock();
@@ -171,6 +197,8 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     stateLock.lock();
     try {
       Execution execution = activeByInvocation.get(invocationId);
+      if (execution != null) observe(GateObserver.Transition.RESPONSE, execution);
+      if (!recorder.enabled()) return "";
       return recorder
           .publishLocked(
               new EventPayload.RpcResponseSent(
@@ -274,24 +302,37 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     }
   }
 
-  private Admission rejectLocked(String invocationId) {
-    recorder.publishLocked(
-        new EventPayload.ExecutionCancel(
-            "", invocationId, EventPayload.CancelSource.SERVER, EventPayload.CancelReason.REJECTED),
-        "");
+  private Admission rejectLocked(String invocationId, Object applicationJob) {
+    observer.observe(GateObserver.Transition.REJECT, applicationJob, -1);
+    if (recorder.enabled())
+      recorder.publishLocked(
+          new EventPayload.ExecutionCancel(
+              "",
+              invocationId,
+              EventPayload.CancelSource.SERVER,
+              EventPayload.CancelReason.REJECTED),
+          "");
     return Admission.REJECTED;
   }
 
   private Execution assignLocked(String unitId, PendingJob pending) {
     String executionId = recorder.instanceId() + ":exec-" + nextExecution++;
     ObservationEvent acquire =
-        recorder.publishLocked(
-            new EventPayload.ResourceAcquire(executionId, unitId, pending.invocationId()), "");
+        !recorder.enabled()
+            ? null
+            : recorder.publishLocked(
+                new EventPayload.ResourceAcquire(executionId, unitId, pending.invocationId()), "");
     Execution execution =
         new Execution(
-            executionId, pending.invocationId(), unitId, acquire.eventReference(), pending.task());
+            executionId,
+            pending.invocationId(),
+            unitId,
+            acquire == null ? "" : acquire.eventReference(),
+            pending.task(),
+            pending.applicationJob());
     ownerByUnit.put(unitId, execution);
     activeByInvocation.put(pending.invocationId(), execution);
+    observe(GateObserver.Transition.ASSIGN, execution);
     return execution;
   }
 
@@ -307,6 +348,7 @@ public final class SlotTrackingExecutor implements AutoCloseable {
   private void run(Execution execution) {
     EventPayload.Outcome outcome = EventPayload.Outcome.ERROR;
     try {
+      observe(GateObserver.Transition.RUN, execution);
       EventPayload.Outcome returned =
           execution.task.run(
               new ExecutionContext(
@@ -337,12 +379,16 @@ public final class SlotTrackingExecutor implements AutoCloseable {
                 EventPayload.CompletionKind.LOCAL),
             "");
       }
-      recorder.publishLocked(
-          new EventPayload.ExecutionEnd(completed.executionId, completed.invocationId, outcome),
-          "");
-      recorder.publishLocked(
-          new EventPayload.ResourceRelease(completed.executionId, completed.unitId), "");
+      observe(GateObserver.Transition.EXIT, completed);
+      if (recorder.enabled())
+        recorder.publishLocked(
+            new EventPayload.ExecutionEnd(completed.executionId, completed.invocationId, outcome),
+            "");
+      if (recorder.enabled())
+        recorder.publishLocked(
+            new EventPayload.ResourceRelease(completed.executionId, completed.unitId), "");
       ownerByUnit.put(completed.unitId, null);
+      observe(GateObserver.Transition.RELEASE, completed);
       activeByInvocation.remove(completed.invocationId);
       if (!waiting.isEmpty() && !closed.get()) {
         next = assignLocked(completed.unitId, waiting.pollFirstEntry().getValue());
@@ -353,6 +399,10 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     if (next != null) {
       schedule(next);
     }
+  }
+
+  private void observe(GateObserver.Transition transition, Execution execution) {
+    observer.observe(transition, execution.applicationJob, unitIds.indexOf(execution.unitId));
   }
 
   private String firstFreeUnitLocked() {
@@ -379,13 +429,15 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     stateLock.lock();
     try {
       for (PendingJob pending : waiting.values()) {
-        recorder.publishLocked(
-            new EventPayload.ExecutionCancel(
-                "",
-                pending.invocationId(),
-                EventPayload.CancelSource.SERVER,
-                EventPayload.CancelReason.REQUESTED),
-            "");
+        observer.observe(GateObserver.Transition.CANCEL, pending.applicationJob(), -1);
+        if (recorder.enabled())
+          recorder.publishLocked(
+              new EventPayload.ExecutionCancel(
+                  "",
+                  pending.invocationId(),
+                  EventPayload.CancelSource.SERVER,
+                  EventPayload.CancelReason.REQUESTED),
+              "");
       }
       waiting.clear();
     } finally {
@@ -397,6 +449,18 @@ public final class SlotTrackingExecutor implements AutoCloseable {
       if (!workers.awaitTermination(5, TimeUnit.SECONDS)) {
         throw new IllegalStateException("application workers did not terminate");
       }
+    }
+    stateLock.lock();
+    try {
+      for (String unit : unitIds) {
+        Execution owner = ownerByUnit.get(unit);
+        observer.observe(
+            GateObserver.Transition.FINAL,
+            owner == null ? null : owner.applicationJob,
+            unitIds.indexOf(unit));
+      }
+    } finally {
+      stateLock.unlock();
     }
   }
 
@@ -473,7 +537,7 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     }
   }
 
-  private record PendingJob(String invocationId, ExecutionTask task) {}
+  private record PendingJob(String invocationId, ExecutionTask task, Object applicationJob) {}
 
   /** Mutable job state; every field is read and written only under the instance lock. */
   private static final class Execution {
@@ -482,6 +546,7 @@ public final class SlotTrackingExecutor implements AutoCloseable {
     private final String unitId;
     private final String acquireReference;
     private final ExecutionTask task;
+    private final Object applicationJob;
     private OpenBlock block;
     private boolean cancelRecorded;
 
@@ -490,12 +555,14 @@ public final class SlotTrackingExecutor implements AutoCloseable {
         String invocationId,
         String unitId,
         String acquireReference,
-        ExecutionTask task) {
+        ExecutionTask task,
+        Object applicationJob) {
       this.executionId = executionId;
       this.invocationId = invocationId;
       this.unitId = unitId;
       this.acquireReference = acquireReference;
       this.task = task;
+      this.applicationJob = applicationJob;
     }
   }
 

@@ -5,6 +5,9 @@ dependencies {
     implementation(libs.grpc.stub)
     implementation(libs.protobuf.java)
     implementation(libs.otel.proto)
+    testImplementation(platform(libs.otel.bom))
+    testImplementation(libs.otel.sdk.logs)
+    testImplementation(libs.otel.exporter.otlp)
 }
 
 tasks.register<JavaExec>("modelMvp") {
@@ -21,4 +24,15 @@ tasks.register<JavaExec>("productionDemo") {
     dependsOn(tasks.classes)
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("dev.spanlease.analyzer.ProductionDemo")
+}
+
+ tasks.register<JavaExec>("replay") {
+    group = "verification"
+    description = "Re-evaluate a recorded finite session: --args='input.json output.jsonl'."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("dev.spanlease.analyzer.ReplayMain")
+}
+
+tasks.processTestResources {
+    from(rootProject.layout.projectDirectory.dir("fixtures/replays")) { into("replays-v2") }
 }

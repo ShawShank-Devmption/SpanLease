@@ -22,6 +22,7 @@ public final class OtlpTelemetry implements AutoCloseable {
 
   private final SdkLoggerProvider provider;
   private final OtelEventSink sink;
+  private volatile long flushFailures;
 
   private OtlpTelemetry(SdkLoggerProvider provider, OtelEventSink sink) {
     this.provider = provider;
@@ -54,6 +55,10 @@ public final class OtlpTelemetry implements AutoCloseable {
     return new OtlpTelemetry(provider, sink);
   }
 
+  public long flushFailures() {
+    return flushFailures;
+  }
+
   public OtelEventSink sink() {
     return sink;
   }
@@ -64,7 +69,7 @@ public final class OtlpTelemetry implements AutoCloseable {
     try {
       sink.close();
     } finally {
-      provider.forceFlush().join(5, TimeUnit.SECONDS);
+      if (!provider.forceFlush().join(5, TimeUnit.SECONDS).isSuccess()) flushFailures++;
       provider.shutdown().join(5, TimeUnit.SECONDS);
     }
   }

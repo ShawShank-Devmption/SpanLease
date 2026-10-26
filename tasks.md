@@ -35,12 +35,34 @@ explicitly permits a draft handoff.
   :testbed:integrationTest` passed locally, including both live litmus tests, six real
   adapter tests and twelve C-TIME persistence regressions. Formatting and module-boundary
   checks passed. Remote CI execution and gate acceptance are not claimed.
-- **Still open:** A-TRUTH is only a handler journal, without gate decisions or bare-mode
-  operation. A-TRIGGER still needs k>1 saturation, saturation without cycles, slow chain,
-  upstream/disjoint live scenarios, cancellation orderings and queue rejection.
-  B-INTEGRATE's mode switch, A-FAULT, C-REPLAY, C-PROOF, B-INTEROP and analyzer race
-  coverage R5–R7/R10/R12/R13/R15 remain open. G1–G3, Stage 3 baselines and Stage 4
-  runs/statistics/manuscript remain pending.
+- **Extended implementation — 2026-10-26:** A-TRUTH now records independent bounded gate
+  decisions, job IDs, physical slots, call boundaries, clock bounds and final snapshots in
+  both modes. B-INTEGRATE has one optional-instrumentation gate/runtime, evaluator-only
+  identity mappings and actual-exit cleanup. Ten live workload cases include the exact
+  coordinated 3-service/k=2 saturated ring, upstream/disjoint waits, negatives, queue
+  rejection and an externally sourced path projection. A-FAULT has seeded loss,
+  duplication, delay/reorder and skew delivery rules plus an actual service-JVM hard
+  crash regression. C-REPLAY records exact receive/evaluation contexts, has a CLI and
+  explicit new v2 golden fixtures. R5–R7/R9/R10/R12/R13/R15 have targeted regressions;
+  bounded exhaustive reduction checks compare 409 snapshots with a separate subset
+  oracle. Real SDK retry, partial-success, malformed-status and size-limit tests exist, including
+  actual SDK retry through the actual receiver's bounded admission path.
+- **Research/evaluation tooling:** `docs/correctness-argument.md` contains the reviewable
+  S1/S2, reduction, temporal-selection and conditional-liveness argument. Baselines can
+  replay native completed/live/enriched SDK spans, invocation-cycle and saturation
+  projections and a triggered finite buffer against identical delivered facts. This is
+  an offline information comparison, not independent live overhead evidence or an active
+  DDMon implementation. The finite pilot/matrix runner records modes, seeds, schedules,
+  source state, attempts/failures, CPU, monotonic root latency, physical queue maxima and
+  encoded JSON bytes. Standard-library statistics use independent runs and explicitly
+  exclude unscorable comparisons; commands and limitations are in `eval/`.
+- **Still open for full project acceptance:** C-PROOF review/acceptance and G1–G3 are
+  not fabricated by adding tests or an argument. Live baseline cost isolation, an explicitly specified active DDMon adaptation,
+  mechanism ablations, warmup/steady-state cost studies, replica/load/fault sweeps,
+  broader external-workload validation, multi-host clock/scheduler qualification,
+  independently reproduced large-run results and the final manuscript remain open.
+  The local pilot and bounded oracle are preliminary evidence, not completed Stage 3/4
+  acceptance or a soundness/novelty guarantee.
 
 ## 1. Ownership and working rules
 

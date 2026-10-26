@@ -24,6 +24,7 @@ public record RunManifest(
     Objects.requireNonNull(parameters, "parameters");
     requireUnique(instances.stream().map(Instance::instanceId).toList(), "instance IDs");
     requireUnique(pools.stream().map(Pool::qualifiedId).toList(), "pool IDs");
+    requireUnique(pools.stream().flatMap(pool -> pool.unitIds().stream()).toList(), "unit IDs");
     Set<String> instanceIds = new HashSet<>(instances.stream().map(Instance::instanceId).toList());
     if (pools.stream().anyMatch(pool -> !instanceIds.contains(pool.instanceId()))) {
       throw new IllegalArgumentException("every pool must reference a declared instance");

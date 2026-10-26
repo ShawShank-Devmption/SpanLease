@@ -22,6 +22,7 @@ public final class InstanceRecorder {
   private final EventSink sink;
   private final Clock wallClock;
   private final LongSupplier monotonicClock;
+  private boolean enabled = true;
   private long nextSequence = 1;
   private long droppedTotal;
 
@@ -34,6 +35,17 @@ public final class InstanceRecorder {
     this.sink = Objects.requireNonNull(sink, "sink");
     this.wallClock = Objects.requireNonNull(wallClock, "wallClock");
     this.monotonicClock = Objects.requireNonNull(monotonicClock, "monotonicClock");
+  }
+
+  /** Bare mode retains the same gate lock but allocates no telemetry records or sequence IDs. */
+  public static InstanceRecorder disabled(String instanceId, Clock clock, LongSupplier monotonic) {
+    InstanceRecorder recorder = new InstanceRecorder(instanceId, event -> true, clock, monotonic);
+    recorder.enabled = false;
+    return recorder;
+  }
+
+  public boolean enabled() {
+    return enabled;
   }
 
   public String instanceId() {
@@ -52,6 +64,7 @@ public final class InstanceRecorder {
 
   /** Emits a complete-prefix boundary covering every previously allocated sequence. */
   public void checkpoint() {
+    if (!enabled) return;
     lock.lock();
     try {
       publishLocked(new EventPayload.InstanceCheckpoint(nextSequence - 1, droppedTotal), "");
@@ -90,6 +103,7 @@ public final class InstanceRecorder {
     if (!lock.isHeldByCurrentThread()) {
       throw new IllegalStateException("publication requires the instance lock");
     }
+    if (!enabled) throw new IllegalStateException("telemetry is disabled");
     ObservationEvent event =
         new ObservationEvent(
             ObservationEvent.SCHEMA_VERSION,

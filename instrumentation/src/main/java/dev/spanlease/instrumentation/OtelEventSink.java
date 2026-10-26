@@ -29,6 +29,7 @@ public final class OtelEventSink implements EventSink, AutoCloseable {
   private final Thread exporterThread;
   private final AtomicBoolean closing = new AtomicBoolean();
   private final AtomicLong rejectedOffers = new AtomicLong();
+  private final AtomicLong encodedBytes = new AtomicLong();
   private final AtomicLong encodingFailures = new AtomicLong();
 
   public OtelEventSink(int capacity, Logger logger, String threadName) {
@@ -59,6 +60,10 @@ public final class OtelEventSink implements EventSink, AutoCloseable {
     return rejectedOffers.get();
   }
 
+  public long encodedBytes() {
+    return encodedBytes.get();
+  }
+
   public long encodingFailures() {
     return encodingFailures.get();
   }
@@ -81,10 +86,12 @@ public final class OtelEventSink implements EventSink, AutoCloseable {
 
   private void emit(ObservationEvent event) {
     try {
+      String body = ContractJson.mapper().writeValueAsString(event);
+      encodedBytes.addAndGet(body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
       logger
           .logRecordBuilder()
           .setTimestamp(event.wallTimeMs(), TimeUnit.MILLISECONDS)
-          .setBody(ContractJson.mapper().writeValueAsString(event))
+          .setBody(body)
           .setAttribute(SCHEMA_VERSION, (long) event.schemaVersion())
           .setAttribute(EVENT_TYPE, event.eventType().wireName())
           .setAttribute(INSTANCE_ID, event.instanceId())

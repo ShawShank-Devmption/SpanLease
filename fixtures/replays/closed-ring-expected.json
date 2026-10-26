@@ -1,0 +1,98 @@
+{
+  "core": {
+    "edges": [
+      {
+        "from": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:app:slot-0",
+        "kind": "own",
+        "to": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1"
+      },
+      {
+        "from": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1",
+        "kind": "wait",
+        "to": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1"
+      },
+      {
+        "from": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:app:slot-0",
+        "kind": "own",
+        "to": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1"
+      },
+      {
+        "from": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1",
+        "kind": "wait",
+        "to": "B-42-call-1"
+      },
+      {
+        "from": "B-42-call-1",
+        "kind": "queue-wait",
+        "to": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:app"
+      }
+    ],
+    "executions": [
+      {
+        "block_ref": "A-0@e123bc22-c345-4536-97d5-61976f9682f5#5",
+        "blocked_on_invocation": "A-42-call-1",
+        "id": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1",
+        "invocation_id": "driver-42-call-1"
+      },
+      {
+        "block_ref": "B-0@e123bc22-c345-4536-97d5-61976f9682f5#5",
+        "blocked_on_invocation": "B-42-call-1",
+        "id": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1",
+        "invocation_id": "A-42-call-1"
+      }
+    ],
+    "queue_entries": [
+      {
+        "instance_id": "A-0@e123bc22-c345-4536-97d5-61976f9682f5",
+        "invocation_id": "B-42-call-1",
+        "resource_id": "app"
+      }
+    ],
+    "units": [
+      {
+        "acquire_ref": "A-0@e123bc22-c345-4536-97d5-61976f9682f5#4",
+        "id": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:app:slot-0",
+        "lease_ref": "A-0@e123bc22-c345-4536-97d5-61976f9682f5#12",
+        "owner_execution_id": "A-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1"
+      },
+      {
+        "acquire_ref": "B-0@e123bc22-c345-4536-97d5-61976f9682f5#4",
+        "id": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:app:slot-0",
+        "lease_ref": "B-0@e123bc22-c345-4536-97d5-61976f9682f5#10",
+        "owner_execution_id": "B-0@e123bc22-c345-4536-97d5-61976f9682f5:exec-1"
+      }
+    ]
+  },
+  "coverage": {
+    "frontier_gaps": [],
+    "missing": [],
+    "unaccounted_units": [],
+    "units_total": 2,
+    "units_with_observed_state": 2,
+    "unmatched_invocations": []
+  },
+  "evaluated_at_wall_ms": 1793038412308,
+  "manifest_hash": "sha256:38deac65458ff26388e2d043efe90c1bdb3267bde76ec0513bed07e269d427de",
+  "persistence": {
+    "first_ms": 1793038410011,
+    "last_ms": 1793038412011,
+    "narrowed_span_ms": 2000,
+    "tau_ms": 2000
+  },
+  "query": {
+    "certified_through_wall_ms": 1793038412009,
+    "cut": {
+      "A-0@e123bc22-c345-4536-97d5-61976f9682f5": 16,
+      "B-0@e123bc22-c345-4536-97d5-61976f9682f5": 15,
+      "driver-0@e123bc22-c345-4536-97d5-61976f9682f5": 7
+    },
+    "scope_instances": [
+      "A-0@e123bc22-c345-4536-97d5-61976f9682f5",
+      "B-0@e123bc22-c345-4536-97d5-61976f9682f5",
+      "driver-0@e123bc22-c345-4536-97d5-61976f9682f5"
+    ]
+  },
+  "run_id": "closed-ring-e123bc22",
+  "schema_version": 2,
+  "verdict": "CONFIRMED_DEADLOCK"
+}

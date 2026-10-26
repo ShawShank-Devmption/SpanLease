@@ -1,0 +1,558 @@
+{
+  "format_version": 1,
+  "manifest": {
+    "instances": [
+      {
+        "clock_qualified_from_ms": 1793038449313,
+        "clock_qualified_through_ms": 1793042049313,
+        "epsilon_ms": 50,
+        "instance_id": "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+        "service_binding": "driver"
+      },
+      {
+        "clock_qualified_from_ms": 1793038449313,
+        "clock_qualified_through_ms": 1793042049313,
+        "epsilon_ms": 50,
+        "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+        "service_binding": "A"
+      },
+      {
+        "clock_qualified_from_ms": 1793038449313,
+        "clock_qualified_through_ms": 1793042049313,
+        "epsilon_ms": 50,
+        "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+        "service_binding": "B"
+      }
+    ],
+    "manifest_hash": "sha256:d1aa611e4c98f70502939fe3575a3520dcd8d557e47226e986f1476c70f1a941",
+    "parameters": {
+      "checkpoint_freshness_ms": 1850,
+      "checkpoint_interval_ms": 500,
+      "delivery_bound_ms": 1000,
+      "epsilon_ms": 50,
+      "evaluation_interval_ms": 250,
+      "lease_age_threshold_ms": 500,
+      "persistence_ms": 2000
+    },
+    "pools": [
+      {
+        "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+        "instrumented": true,
+        "resource_id": "app",
+        "unit_ids": [
+          "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-0",
+          "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-1"
+        ]
+      },
+      {
+        "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+        "instrumented": true,
+        "resource_id": "app",
+        "unit_ids": [
+          "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-0"
+        ]
+      }
+    ],
+    "run_id": "spare-capacity-3dc2ca53",
+    "schema_version": 2
+  },
+  "steps": [
+    {
+      "evaluation_wall_ms": 1793038449822,
+      "observations": [
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 1,
+            "monotonic_time_ns": 46593613710083,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 0
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449574
+          },
+          "receipt_monotonic_ns": 46593714809041,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 2,
+            "monotonic_time_ns": 46593613978583,
+            "payload": {
+              "event_type": "rpc.invocation.sent",
+              "caller_execution_id": "",
+              "invocation_id": "driver-42-call-1",
+              "target_service": "A"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449574
+          },
+          "receipt_monotonic_ns": 46593714809041,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 1,
+            "monotonic_time_ns": 46593611767208,
+            "payload": {
+              "event_type": "resource.init",
+              "capacity": 1,
+              "resource_id": "app",
+              "unit_ids": [
+                "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-0"
+              ]
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449572
+          },
+          "receipt_monotonic_ns": 46593714911750,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 2,
+            "monotonic_time_ns": 46593611828750,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 1
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449572
+          },
+          "receipt_monotonic_ns": 46593714911750,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#6",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 3,
+            "monotonic_time_ns": 46593616352041,
+            "payload": {
+              "event_type": "rpc.invocation.arrived",
+              "invocation_id": "A-42-call-1"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449577
+          },
+          "receipt_monotonic_ns": 46593714911750,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 4,
+            "monotonic_time_ns": 46593616551666,
+            "payload": {
+              "event_type": "resource.acquire",
+              "execution_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "A-42-call-1",
+              "resource_instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-0"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449577
+          },
+          "receipt_monotonic_ns": 46593714911750,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 5,
+            "monotonic_time_ns": 46593616620333,
+            "payload": {
+              "event_type": "rpc.block.begin",
+              "execution_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "B-42-call-1"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449577
+          },
+          "receipt_monotonic_ns": 46593714911750,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 6,
+            "monotonic_time_ns": 46593616623000,
+            "payload": {
+              "event_type": "rpc.invocation.sent",
+              "caller_execution_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "B-42-call-1",
+              "target_service": "A"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449577
+          },
+          "receipt_monotonic_ns": 46593714911750,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 1,
+            "monotonic_time_ns": 46593612968458,
+            "payload": {
+              "event_type": "resource.init",
+              "capacity": 2,
+              "resource_id": "app",
+              "unit_ids": [
+                "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-0",
+                "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-1"
+              ]
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449573
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 2,
+            "monotonic_time_ns": 46593613015333,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 1
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449573
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#2",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 3,
+            "monotonic_time_ns": 46593615174041,
+            "payload": {
+              "event_type": "rpc.invocation.arrived",
+              "invocation_id": "driver-42-call-1"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449575
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 4,
+            "monotonic_time_ns": 46593615442791,
+            "payload": {
+              "event_type": "resource.acquire",
+              "execution_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "driver-42-call-1",
+              "resource_instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-0"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449576
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 5,
+            "monotonic_time_ns": 46593615526791,
+            "payload": {
+              "event_type": "rpc.block.begin",
+              "execution_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "A-42-call-1"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449576
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 6,
+            "monotonic_time_ns": 46593615528000,
+            "payload": {
+              "event_type": "rpc.invocation.sent",
+              "caller_execution_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "A-42-call-1",
+              "target_service": "B"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449576
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#6",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 7,
+            "monotonic_time_ns": 46593617426916,
+            "payload": {
+              "event_type": "rpc.invocation.arrived",
+              "invocation_id": "B-42-call-1"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449578
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 8,
+            "monotonic_time_ns": 46593617543916,
+            "payload": {
+              "event_type": "resource.acquire",
+              "execution_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-2",
+              "invocation_id": "B-42-call-1",
+              "resource_instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:app:slot-1"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038449578
+          },
+          "receipt_monotonic_ns": 46593715019416,
+          "receipt_wall_ms": 1793038449675
+        }
+      ]
+    },
+    {
+      "evaluation_wall_ms": 1793038450075,
+      "observations": []
+    },
+    {
+      "evaluation_wall_ms": 1793038450322,
+      "observations": [
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 3,
+            "monotonic_time_ns": 46594118717416,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 2
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450079
+          },
+          "receipt_monotonic_ns": 46594166421208,
+          "receipt_wall_ms": 1793038450127
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 9,
+            "monotonic_time_ns": 46594116843500,
+            "payload": {
+              "event_type": "execution.lease",
+              "block_ref": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#5",
+              "execution_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "A-42-call-1",
+              "lease_expiry_ms": 1793038451577,
+              "observed_age_ms": 501,
+              "start_ref": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#4"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450077
+          },
+          "receipt_monotonic_ns": 46594166553791,
+          "receipt_wall_ms": 1793038450127
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 10,
+            "monotonic_time_ns": 46594116879416,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 9
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450077
+          },
+          "receipt_monotonic_ns": 46594166553791,
+          "receipt_wall_ms": 1793038450127
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 7,
+            "monotonic_time_ns": 46594116843500,
+            "payload": {
+              "event_type": "execution.lease",
+              "block_ref": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#5",
+              "execution_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837:exec-1",
+              "invocation_id": "B-42-call-1",
+              "lease_expiry_ms": 1793038451577,
+              "observed_age_ms": 500,
+              "start_ref": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837#4"
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450077
+          },
+          "receipt_monotonic_ns": 46594167846500,
+          "receipt_wall_ms": 1793038450128
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 8,
+            "monotonic_time_ns": 46594116879416,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 7
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450077
+          },
+          "receipt_monotonic_ns": 46594167846500,
+          "receipt_wall_ms": 1793038450128
+        }
+      ]
+    },
+    {
+      "evaluation_wall_ms": 1793038450575,
+      "observations": []
+    },
+    {
+      "evaluation_wall_ms": 1793038450825,
+      "observations": [
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 4,
+            "monotonic_time_ns": 46594615318958,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 3
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450576
+          },
+          "receipt_monotonic_ns": 46594647959583,
+          "receipt_wall_ms": 1793038450608
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 11,
+            "monotonic_time_ns": 46594614872083,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 10
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450575
+          },
+          "receipt_monotonic_ns": 46594659685083,
+          "receipt_wall_ms": 1793038450620
+        },
+        {
+          "event": {
+            "causal_parent": "",
+            "instance_id": "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+            "local_seq": 9,
+            "monotonic_time_ns": 46594616821083,
+            "payload": {
+              "event_type": "instance.checkpoint",
+              "dropped_total": 0,
+              "through_seq": 8
+            },
+            "schema_version": 2,
+            "span_id": "",
+            "trace_id": "",
+            "wall_time_ms": 1793038450577
+          },
+          "receipt_monotonic_ns": 46594663886041,
+          "receipt_wall_ms": 1793038450624
+        }
+      ]
+    }
+  ]
+}

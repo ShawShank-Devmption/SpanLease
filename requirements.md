@@ -12,9 +12,10 @@ ordered work to three developers; `AGENTS.md` governs contributions.
 The revision-2 proposal PDF remains the historical research motivation. Where its
 semantics conflict with this explicitly revised baseline, the changes are recorded in
 `docs/decisions.md`; do not reintroduce those defects. The revised event/report contract
-is **version 2, pending the all-developer contract review G0**. Documentation is ready
-for that review; this does not assert approval, a completed implementation, or proofs.
-Existing v1 replay files remain historical fixtures until migrated at G0.
+is **version 2, frozen for solo implementation by D13/D14 on 2026-09-22**. That
+role-based review is not independent three-person review. G1–G3 and correctness proof
+acceptance remain separate. Historical v1 YAML is retained explicitly; new v2 replay
+sessions and golden reports are under `fixtures/replays`.
 
 ## 2. Objective and bounded contribution
 

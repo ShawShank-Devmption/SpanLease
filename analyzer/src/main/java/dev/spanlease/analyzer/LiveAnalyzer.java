@@ -41,6 +41,10 @@ public final class LiveAnalyzer implements AutoCloseable {
   private static final int MAX_EXPORT_BYTES = 4 * 1024 * 1024;
 
   private final AnalyzerEngine engine;
+  private final RunManifest manifest;
+  private final Path recording;
+  private final java.util.ArrayList<ReplaySession.Step> steps = new java.util.ArrayList<>();
+  private final java.util.ArrayList<ObservationEnvelope> pending = new java.util.ArrayList<>();
   private final AnalyzerIngress ingress = new AnalyzerIngress(INGRESS_CAPACITY_RECORDS);
   private final long evaluationIntervalMs;
   private final boolean emitEveryEvaluation;
@@ -57,8 +61,11 @@ public final class LiveAnalyzer implements AutoCloseable {
       boolean emitEveryEvaluation,
       Consumer<VerdictReport> reports,
       Clock wallClock,
-      LongSupplier monotonicClock)
+      LongSupplier monotonicClock,
+      Path recording)
       throws IOException {
+    this.manifest = manifest;
+    this.recording = recording;
     this.engine = new AnalyzerEngine(manifest);
     this.evaluationIntervalMs = manifest.parameters().evaluationIntervalMs();
     this.emitEveryEvaluation = emitEveryEvaluation;
@@ -95,7 +102,7 @@ public final class LiveAnalyzer implements AutoCloseable {
       LongSupplier monotonicClock)
       throws IOException {
     return new LiveAnalyzer(
-        manifest, port, emitEveryEvaluation, reports, wallClock, monotonicClock);
+        manifest, port, emitEveryEvaluation, reports, wallClock, monotonicClock, null);
   }
 
   public int port() {
@@ -119,13 +126,29 @@ public final class LiveAnalyzer implements AutoCloseable {
         if (waitMs > 0) {
           List<ObservationEnvelope> batch = ingress.poll(waitMs);
           if (batch != null) {
-            batch.forEach(engine::ingest);
+            ingest(batch);
           }
           continue;
         }
-        ingress.drain().forEach(batch -> batch.forEach(engine::ingest));
+        ingress.drain().forEach(this::ingest);
         long evaluatedAt = wallClock.millis();
         VerdictReport report = engine.evaluate(evaluatedAt);
+        if (recording != null) {
+          steps.add(new ReplaySession.Step(List.copyOf(pending), evaluatedAt));
+          pending.clear();
+          Path temporary = recording.resolveSibling(recording.getFileName() + ".tmp");
+          try {
+            ContractJson.mapper()
+                .writeValue(temporary.toFile(), new ReplaySession(1, manifest, steps));
+            java.nio.file.Files.move(
+                temporary,
+                recording,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+          } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+          }
+        }
         ReportSignature signature = ReportSignature.of(report);
         if (emitEveryEvaluation || !signature.equals(last)) {
           last = signature;
@@ -143,6 +166,11 @@ public final class LiveAnalyzer implements AutoCloseable {
     }
   }
 
+  private void ingest(List<ObservationEnvelope> batch) {
+    batch.forEach(engine::ingest);
+    if (recording != null) pending.addAll(batch);
+  }
+
   @Override
   public void close() throws InterruptedException {
     running = false;
@@ -156,6 +184,7 @@ public final class LiveAnalyzer implements AutoCloseable {
 
   public static void main(String[] args) throws Exception {
     Path manifestPath = null;
+    Path recording = null;
     int port = 4317;
     boolean emitAll = false;
     for (int index = 0; index < args.length; index += 2) {
@@ -164,6 +193,7 @@ public final class LiveAnalyzer implements AutoCloseable {
       }
       switch (args[index]) {
         case "--manifest" -> manifestPath = Path.of(args[index + 1]);
+        case "--record" -> recording = Path.of(args[index + 1]);
         case "--port" -> port = Integer.parseInt(args[index + 1]);
         case "--emit" -> emitAll = parseEmit(args[index + 1]);
         default -> throw new IllegalArgumentException("unknown option " + args[index]);
@@ -176,13 +206,14 @@ public final class LiveAnalyzer implements AutoCloseable {
     ObjectMapper json = ContractJson.mapper();
     RunManifest manifest = json.readValue(manifestPath.toFile(), RunManifest.class);
     LiveAnalyzer analyzer =
-        start(
+        new LiveAnalyzer(
             manifest,
             port,
             emitAll,
             report -> emit("REPORT " + encode(json, report)),
             Clock.systemUTC(),
-            System::nanoTime);
+            System::nanoTime,
+            recording);
     Runtime.getRuntime()
         .addShutdownHook(
             new Thread(
@@ -194,7 +225,9 @@ public final class LiveAnalyzer implements AutoCloseable {
                   }
                 }));
     emit("READY port=" + analyzer.port());
-    analyzer.awaitTermination();
+    try (analyzer) {
+      analyzer.awaitTermination();
+    }
   }
 
   private static boolean parseEmit(String value) {

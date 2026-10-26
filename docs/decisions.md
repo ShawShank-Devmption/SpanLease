@@ -164,3 +164,60 @@ to empty is inconclusive, never negative. *Why:* a newer dependent or disjoint r
 not reset an older closed witness, and a lease outside the selected endpoint cannot
 justify it. *Affects:* C-TIME/R9, analyzer evidence/report selection; v2 report shape and
 predicate unchanged. C-PROOF and general historical-cut search remain separate work.
+
+
+**D20 | 2026-10-26 | Share the physical gate between bare and instrumented runs.**
+An optional recorder disables sequence allocation, DTO construction, RPC metadata and
+scanners while retaining identical admission, cancellation, worker and cleanup paths.
+A separate `GateObserver` receives application-owned job tokens and physical slot
+indices. The bounded truth recorder allocates its own epoch/job/ordinal identities;
+evaluator mappings are stored separately and never enter truth or analyzer input.
+Truth overflow is unscorable. *Why:* compare one execution architecture and observe
+actual gate decisions even when telemetry is off. *Affects:* A-TRUTH/B-INTEGRATE; no v2
+wire change. Local truth clock bounds are declared relative to the shared host clock,
+not an assertion of measured UTC or multi-host synchronization.
+
+**D21 | 2026-10-26 | Fail closed on known suffix gaps and invalid causal identities.**
+A known gap beyond an older checkpoint blocks either confirmation. Delayed receipt
+cannot refresh source-age freshness. Validate request/response parent types and IDs,
+source execution epochs, declared unit uniqueness, empty scope and clock-error bounds.
+Expired leases cannot justify a progress-based negative with blocked owners. Report
+actual initialization coverage, frontier gap ranges and unmatched counterparts. A
+finite history budget permanently makes the run inconclusive when exceeded. *Why:*
+old cuts, aliases and discarded facts must not manufacture complete observations.
+*Affects:* C-CUT/C-REPORT/R5–R7/R9/R10/R12/R13/R15; no field/schema change.
+
+**D22 | 2026-10-26 | Record replay context separately from the observation schema.**
+The finite replay container's format version is 1; enclosed manifests/events/reports
+remain v2. Ordered steps preserve batches, first receipt clocks and evaluation times.
+The live analyzer atomically writes this journal before emitting each recorded report.
+Historical v1 YAML is retained explicitly; new captured v2 JSON fixtures are separate.
+*Why:* event payloads and source timestamps cannot reproduce receipt freshness or
+online cut selection. *Affects:* C-REPLAY, live harness and golden fixtures.
+
+**D23 | 2026-10-26 | Distinguish delivery faults from a physical crash.**
+Seeded bounded fault rules alter copies of observations, never independent truth.
+The crash regression launches the same ChainNode in separate service JVMs and kills
+one abruptly; its last atomically exported truth snapshot is marked truncated. No
+terminal checkpoint/end/release is fabricated. *Why:* dropping telemetry is not a
+physical process crash. *Affects:* A-FAULT/I-FAULT/R13 and retained run artifacts.
+
+**D24 | 2026-10-26 | Baseline replay and local pilots have limited evidence scope.**
+Native SDK live/enriched span snapshots, completed spans, invocation-cycle/saturation
+projections and triggered buffer retention are evaluated on identical delivered facts.
+Their offline CPU is not independent live instrumentation overhead. Cycle/saturation
+alarms are not confirmed deadlocks or an active DDMon reproduction. Pilot statistics
+use independent runs, separate confirmation directions and explicitly unscorable
+vector-cut comparisons. The hotel-search workload is a sourced path projection, not
+DeathStarBench performance. *Why:* provide reproducible tools without upgrading
+information comparisons, a small local sample or an argument into research acceptance.
+*Affects:* baselines/eval, E-REALISM/E-PROTOCOL and pending G1–G3.
+
+**D25 | 2026-10-27 | Recheck cancellation after unary admission.** A server context
+can expire before the adapter installs its listener and submits the job. The earlier
+callback has no queued job to remove. Recheck cancellation immediately after the
+serialized admission decision; a queued job is removed and an assigned job keeps its
+slot until actual exit. A real deadline-before-admission regression holds a separate
+occupier and verifies no orphan queue entry. *Why:* listener registration alone does
+not cover cancellation preceding readiness. *Affects:* B-RPC/B-INTEGRATE/R3; no wire
+or cancellation/release semantic change.

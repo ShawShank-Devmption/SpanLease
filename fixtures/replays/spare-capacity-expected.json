@@ -1,0 +1,35 @@
+{
+  "core": {
+    "edges": [],
+    "executions": [],
+    "queue_entries": [],
+    "units": []
+  },
+  "coverage": {
+    "frontier_gaps": [],
+    "missing": [],
+    "unaccounted_units": [],
+    "units_total": 3,
+    "units_with_observed_state": 3,
+    "unmatched_invocations": []
+  },
+  "evaluated_at_wall_ms": 1793038450825,
+  "manifest_hash": "sha256:d1aa611e4c98f70502939fe3575a3520dcd8d557e47226e986f1476c70f1a941",
+  "persistence": null,
+  "query": {
+    "certified_through_wall_ms": 1793038450525,
+    "cut": {
+      "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837": 11,
+      "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837": 9,
+      "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837": 4
+    },
+    "scope_instances": [
+      "A-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+      "B-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837",
+      "driver-0@3dc2ca53-3705-4d54-b2ab-dd2b3c500837"
+    ]
+  },
+  "run_id": "spare-capacity-3dc2ca53",
+  "schema_version": 2,
+  "verdict": "CONFIRMED_NO_DEADLOCK"
+}

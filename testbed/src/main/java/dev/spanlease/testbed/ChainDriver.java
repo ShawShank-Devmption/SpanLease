@@ -53,15 +53,29 @@ public final class ChainDriver implements AutoCloseable {
       RunManifest.Parameters parameters,
       EventSink sink,
       Supplier<String> invocationIds) {
-    this.recorder = new InstanceRecorder(instanceId, sink, clock, System::nanoTime);
+    this(instanceId, parameters, sink, invocationIds, true);
+  }
+
+  public ChainDriver(
+      String instanceId,
+      RunManifest.Parameters parameters,
+      EventSink sink,
+      Supplier<String> invocationIds,
+      boolean instrumented) {
+    this.recorder =
+        instrumented
+            ? new InstanceRecorder(instanceId, sink, clock, System::nanoTime)
+            : InstanceRecorder.disabled(instanceId, clock, System::nanoTime);
     this.scanner =
-        new PeriodicScanner(
-            recorder,
-            List.of(),
-            LeasePolicy.DEFAULT,
-            Duration.ofMillis(LeasePolicy.DEFAULT.renewalMs() / 2),
-            Duration.ofMillis(parameters.checkpointIntervalMs()),
-            "driver-scanner");
+        !instrumented
+            ? null
+            : new PeriodicScanner(
+                recorder,
+                List.of(),
+                LeasePolicy.DEFAULT,
+                Duration.ofMillis(LeasePolicy.DEFAULT.renewalMs() / 2),
+                Duration.ofMillis(parameters.checkpointIntervalMs()),
+                "driver-scanner");
     this.rootCaller = new RootCaller(recorder, invocationIds);
   }
 
@@ -85,23 +99,33 @@ public final class ChainDriver implements AutoCloseable {
     CallRequest request =
         CallRequest.newBuilder().setRequestId(requestId).addAllRemaining(hops).build();
     long sentAtMs = clock.millis();
+    long sentNanos = System.nanoTime();
+    var completedNanos = new java.util.concurrent.atomic.AtomicLong();
     Deadline rootDeadline = Deadline.after(deadline.toMillis(), TimeUnit.MILLISECONDS);
     Context.CancellableContext context = Context.current().withCancellation();
     CompletableFuture<CallReply> reply =
         CompletableFuture.supplyAsync(
-            () -> {
-              Context previous = context.attach();
-              try {
-                return rootCaller.call(
-                    target,
-                    ChainGrpc.newBlockingStub(channel).withDeadline(rootDeadline),
-                    stub -> stub.call(request));
-              } finally {
-                context.detach(previous);
-              }
-            },
-            rootThreads);
-    return new RootCall(requestId, sentAtMs, sentAtMs + deadline.toMillis(), reply, context);
+                () -> {
+                  Context previous = context.attach();
+                  try {
+                    return rootCaller.call(
+                        target,
+                        ChainGrpc.newBlockingStub(channel).withDeadline(rootDeadline),
+                        stub -> stub.call(request));
+                  } finally {
+                    context.detach(previous);
+                  }
+                },
+                rootThreads)
+            .whenComplete((value, failure) -> completedNanos.set(System.nanoTime()));
+    return new RootCall(
+        requestId,
+        sentAtMs,
+        sentAtMs + deadline.toMillis(),
+        reply,
+        context,
+        sentNanos,
+        completedNanos);
   }
 
   @Override
@@ -112,7 +136,7 @@ public final class ChainDriver implements AutoCloseable {
     }
     rootThreads.shutdownNow();
     recorder.checkpoint();
-    scanner.close();
+    if (scanner != null) scanner.close();
   }
 
   /** One in-flight root request. */
@@ -121,7 +145,14 @@ public final class ChainDriver implements AutoCloseable {
       long sentAtMs,
       long deadlineAtMs,
       CompletableFuture<CallReply> reply,
-      Context.CancellableContext context) {
+      Context.CancellableContext context,
+      long sentNanos,
+      java.util.concurrent.atomic.AtomicLong completedNanos) {
+    public long latencyNanos() {
+      long finished = completedNanos.get();
+      return finished == 0 ? -1 : finished - sentNanos;
+    }
+
     /** Requests cancellation; the cascade reaches every descendant through gRPC Context. */
     public void cancel() {
       context.cancel(Status.CANCELLED.withDescription("measurement ended").asException());
