@@ -27,6 +27,7 @@ tasks.register<JavaExec>("productionDemo") {
 }
 
  tasks.register<JavaExec>("replay") {
+    workingDir(rootProject.projectDir)
     group = "verification"
     description = "Re-evaluate a recorded finite session: --args='input.json output.jsonl'."
     classpath = sourceSets.main.get().runtimeClasspath

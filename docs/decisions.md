@@ -221,3 +221,32 @@ slot until actual exit. A real deadline-before-admission regression holds a sepa
 occupier and verifies no orphan queue entry. *Why:* listener registration alone does
 not cover cancellation preceding readiness. *Affects:* B-RPC/B-INTEGRATE/R3; no wire
 or cancellation/release semantic change.
+
+**D26 | 2026-10-27 | Resolve CLI artifact paths from the repository root.** Gradle
+JavaExec defaults to its module directory. Set root working directories for scenario,
+experiment, replay and baseline-replay launchers so documented relative paths compose
+with the Python summarizer. Preserve the first pilot's clean source revision and its
+original module-relative launch location when archiving relocated artifacts. The crash
+regression also uses a fixed root-workload timer, not a detector verdict, to trigger
+its physical fault. *Why:* reproduction paths and fault schedules must be independent
+of analyzer feedback. *Affects:* A-HARNESS/A-FAULT/E-REPRO; no detector/schema change.
+
+**D27 | 2026-10-27 | Stop the analyzer through its local control pipe and finish publication.**
+The pilot exposed a SIGTERM race: an atomic replay file can contain one final evaluation
+before the parent receives its stdout report. The harness now sends STOP over stdin,
+waits for a clean exit and drains stdout. Close lets an in-progress evaluation finish
+before resorting to interruption; any accepted unqueried tail is recorded as a step
+with no evaluation. Original pilot artifacts remain unchanged with explicit replay/
+stdout prefix diagnostics. *Why:* deterministic replay needs both the exact query
+contexts and a completed report stream. *Affects:* C-REPLAY/A-HARNESS; no observation,
+manifest or report schema change; the existing replay container already allows a
+no-query step. This local pipe is not a network admin/control service.
+
+**D28 | 2026-10-27 | Known invocation aliasing invalidates evidence before cut selection.**
+Track unique send, arrival and acquire identities at ingestion, after idempotent event
+reference handling. A second distinct send/arrival/acquire for the same identity is a
+known A2 violation even if it falls beyond an older checkpoint. It cannot be hidden by
+retracting to an earlier cut. *Why:* identity validity is a coverage guard, not an
+observed progress fact or a condition to postpone until the next checkpoint. *Affects:*
+C-INGEST/C-CUT/R14; no wire/schema change. Optional pilot figures use a separately pinned
+plotting environment; the standard-library statistics path remains dependency-free.

@@ -21,3 +21,6 @@ output/
 # Run artifacts
 *.log
 eval/results/
+
+# Artifacts from the pre-root-working-directory launcher
+testbed/eval/results/

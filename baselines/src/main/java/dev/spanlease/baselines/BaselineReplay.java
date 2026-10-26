@@ -187,7 +187,24 @@ public final class BaselineReplay {
   }
 
   public static void main(String[] args) throws Exception {
-    if (args.length != 2) throw new IllegalArgumentException("usage: replay.json baselines.jsonl");
+    if (args.length != 2)
+      throw new IllegalArgumentException(
+          "usage: replay.json baselines.jsonl | --all runs-directory");
+    if (args[0].equals("--all")) {
+      try (var sessions = Files.walk(Path.of(args[1]), 2)) {
+        for (Path session :
+            sessions
+                .filter(path -> path.getFileName().toString().equals("observations.replay.json"))
+                .sorted()
+                .toList()) {
+          main(
+              new String[] {
+                session.toString(), session.resolveSibling("baselines.jsonl").toString()
+              });
+        }
+      }
+      return;
+    }
     var json = ContractJson.mapper();
     var session = json.readValue(Path.of(args[0]).toFile(), ReplaySession.class);
     List<String> output = new ArrayList<>();

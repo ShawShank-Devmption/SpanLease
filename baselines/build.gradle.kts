@@ -6,6 +6,7 @@ dependencies {
 }
 
 tasks.register<JavaExec>("replay") {
+    workingDir(rootProject.projectDir)
     group = "application"
     description = "Offline baseline information comparison: --args='observations.replay.json baselines.jsonl'."
     classpath = sourceSets.main.get().runtimeClasspath

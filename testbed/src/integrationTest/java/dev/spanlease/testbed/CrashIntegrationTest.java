@@ -62,13 +62,16 @@ class CrashIntegrationTest {
           var root =
               driver.submit(
                   "crash-root", workload.roots().getFirst().hops(), Duration.ofSeconds(30));
+          var schedule = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
           try {
-            assertThat(
-                    analyzer.awaitReport(
-                        r -> r.report().verdict() == Verdict.CONFIRMED_DEADLOCK,
-                        Duration.ofSeconds(15)))
-                .isTrue();
-            long crashedAt = b.crash();
+            // The physical fault follows a workload timer, independently of every detector report.
+            var crash = schedule.schedule(b::crash, 8, java.util.concurrent.TimeUnit.SECONDS);
+            long crashedAt = crash.get(15, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(analyzer.reports())
+                .anyMatch(
+                    r ->
+                        r.report().evaluatedAtWallMs() < crashedAt
+                            && r.report().verdict() == Verdict.CONFIRMED_DEADLOCK);
             json.writeValue(
                 directory.resolve("crash.json").toFile(),
                 Map.of(
@@ -100,6 +103,7 @@ class CrashIntegrationTest {
                 .contains("CALL_ENTER")
                 .doesNotContain("RELEASE");
           } finally {
+            schedule.shutdownNow();
             root.cancel();
           }
         }

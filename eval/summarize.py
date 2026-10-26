@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import hashlib
 import math
 import pathlib
 import platform
@@ -86,7 +87,7 @@ def closed_at(entries, capacities, at, selected=None):
     return union
 
 
-def score(result, manifest):
+def score(result, manifest, measurement_start_ms=0):
     capacities = {next(i['service_binding'] for i in manifest['instances']
                        if i['instance_id'] == p['instance_id']): len(p['unit_ids'])
                   for p in manifest['pools']}
@@ -97,7 +98,9 @@ def score(result, manifest):
     bad_positive, bad_negative, uncertain = 0, 0, 0
     first_positive = None
     scored_positive = scored_negative = 0
-    for report in result['reports']:
+    measured_reports = [r for r in result['reports']
+                        if measurement_start_ms <= r['evaluated_at_wall_ms'] <= result['measurement_ended_ms']]
+    for report in measured_reports:
         verdict = report['verdict']
         if verdict == 'CONFIRMED_DEADLOCK':
             interval = report['persistence']
@@ -144,7 +147,11 @@ def score(result, manifest):
                          if o.get('latency_ns', -1) >= 0 and o['status'] == 'OK']
     deadlines = [o['deadline_at_ms'] for o in result['outcomes'] if 'deadline_at_ms' in o]
     time_saved = min(deadlines) - first_positive if deadlines and first_positive is not None else None
-    return dict(time_saved_before_earliest_deadline_ms=time_saved,
+    verdict_counts = dict(collections.Counter(r['verdict'] for r in measured_reports))
+    missing_counts = dict(collections.Counter(m['code'] for r in measured_reports for m in r['coverage']['missing']))
+    return dict(all_recorded_verdict_counts=dict(collections.Counter(r['verdict'] for r in result['reports'])),
+                verdict_counts=verdict_counts, missing_reason_occurrences=missing_counts,
+                time_saved_before_earliest_deadline_ms=time_saved,
                 scorable_positive_reports=scored_positive, scorable_negative_reports=scored_negative,
                 false_positive_run=int(bad_positive > 0), false_negative_run=int(bad_negative > 0),
                 positive_reports_mismatching_physical_oracle=bad_positive,
@@ -163,8 +170,10 @@ def summarize(root):
     for path in sorted(root.glob('*/result.json')):
         result = json.loads(path.read_text())
         manifest = json.loads(path.with_name('manifest.json').read_text())
+        measurement_file = path.with_name('measurement.json')
+        measurement_start = json.loads(measurement_file.read_text())['started_at_ms'] if measurement_file.exists() else 0
         row = dict(directory=str(path.parent), workload=result['workload'], mode='instrumented' if result['instrumented'] else 'bare',
-                   seed=result['seed'], **score(result, manifest))
+                   seed=result['seed'], **score(result, manifest, measurement_start))
         rows.append(row)
         groups[(row['workload'], row['mode'])].append(row)
     summaries = []
@@ -189,6 +198,7 @@ def summarize(root):
     if ledger.exists():
         failures = [json.loads(line) for line in ledger.read_text().splitlines() if json.loads(line)['status'] != 'completed']
     return dict(scope='local pilot; physical oracle checks are bounded; ambiguous vector-cut comparisons are unscorable',
+                summarizer_sha256=hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
                 python_version=platform.python_version(), bootstrap_seed=42, bootstrap_repetitions=5000, failed_attempts=failures, runs=rows, groups=summaries)
 
 

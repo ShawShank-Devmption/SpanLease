@@ -53,6 +53,7 @@ public final class LiveAnalyzer implements AutoCloseable {
   private final Server server;
   private final Thread core;
   private volatile boolean running = true;
+  private boolean closed;
   private volatile RuntimeException failure;
 
   private LiveAnalyzer(
@@ -172,14 +173,43 @@ public final class LiveAnalyzer implements AutoCloseable {
   }
 
   @Override
-  public void close() throws InterruptedException {
-    running = false;
-    core.interrupt();
-    server.shutdown();
-    if (!server.awaitTermination(5, TimeUnit.SECONDS)) {
-      server.shutdownNow();
+  public synchronized void close() throws InterruptedException {
+    if (closed) {
+      if (failure != null) throw failure;
+      return;
     }
+    closed = true;
+    server.shutdown();
+    if (!server.awaitTermination(5, TimeUnit.SECONDS)) server.shutdownNow();
+    running = false;
+    // The bounded poll will wake on its own. Do not interrupt atomic journal/report publication.
     core.join(TimeUnit.SECONDS.toMillis(5));
+    if (core.isAlive()) {
+      core.interrupt();
+      core.join(TimeUnit.SECONDS.toMillis(5));
+      if (core.isAlive()) throw new IllegalStateException("analyzer core did not terminate");
+    }
+    if (recording != null) {
+      var tail = new java.util.ArrayList<>(pending);
+      ingress.drain().forEach(tail::addAll);
+      if (!tail.isEmpty()) {
+        steps.add(new ReplaySession.Step(tail, null));
+        try {
+          Path temporary = recording.resolveSibling(recording.getFileName() + ".tmp");
+          ContractJson.mapper()
+              .writeValue(temporary.toFile(), new ReplaySession(1, manifest, steps));
+          java.nio.file.Files.move(
+              temporary,
+              recording,
+              java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+              java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException exception) {
+          failure = new UncheckedIOException(exception);
+          throw failure;
+        }
+      }
+    }
+    if (failure != null) throw failure;
   }
 
   public static void main(String[] args) throws Exception {
@@ -224,6 +254,27 @@ public final class LiveAnalyzer implements AutoCloseable {
                     Thread.currentThread().interrupt();
                   }
                 }));
+    Thread commands =
+        new Thread(
+            () -> {
+              try (var input =
+                  new java.io.BufferedReader(new java.io.InputStreamReader(System.in))) {
+                for (String line = input.readLine(); line != null; line = input.readLine()) {
+                  if (line.equals("STOP")) {
+                    analyzer.close();
+                    return;
+                  }
+                }
+                analyzer.close();
+              } catch (IOException failure) {
+                throw new UncheckedIOException(failure);
+              } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+              }
+            },
+            "analyzer-commands");
+    commands.setDaemon(true);
+    commands.start();
     emit("READY port=" + analyzer.port());
     try (analyzer) {
       analyzer.awaitTermination();

@@ -31,6 +31,8 @@ public final class AnalyzerProcess implements AutoCloseable {
   private static final String MAIN_CLASS = "dev.spanlease.analyzer.LiveAnalyzer";
 
   private final Process process;
+  private boolean gracefulShutdown;
+  private volatile Throwable outputFailure;
   private final CompletableFuture<Integer> ready = new CompletableFuture<>();
   private final List<TimedReport> reports = new CopyOnWriteArrayList<>();
   private final Consumer<TimedReport> listener;
@@ -93,6 +95,8 @@ public final class AnalyzerProcess implements AutoCloseable {
       throws InterruptedException {
     long deadline = System.nanoTime() + timeout.toNanos();
     while (reports.stream().noneMatch(predicate)) {
+      if (outputFailure != null)
+        throw new IllegalStateException("analyzer output failed", outputFailure);
       long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
       if (remainingMs <= 0) {
         return false;
@@ -123,6 +127,10 @@ public final class AnalyzerProcess implements AutoCloseable {
         }
       }
     } catch (IOException | RuntimeException failure) {
+      outputFailure = failure;
+      synchronized (this) {
+        notifyAll();
+      }
       ready.completeExceptionally(failure);
       return;
     }
@@ -131,12 +139,33 @@ public final class AnalyzerProcess implements AutoCloseable {
 
   @Override
   public void close() throws InterruptedException {
-    process.destroy();
-    if (!process.waitFor(5, TimeUnit.SECONDS)) {
-      process.destroyForcibly();
-      process.waitFor(5, TimeUnit.SECONDS);
+    if (process.isAlive()) {
+      try {
+        process.getOutputStream().write("STOP\n".getBytes(StandardCharsets.UTF_8));
+        process.getOutputStream().flush();
+      } catch (IOException stopped) {
+        // A failed child is diagnosed below; do not hide it by fabricating a clean shutdown.
+      }
+    }
+    if (!process.waitFor(15, TimeUnit.SECONDS)) {
+      process.destroy();
+      if (!process.waitFor(5, TimeUnit.SECONDS)) {
+        process.destroyForcibly();
+        process.waitFor(5, TimeUnit.SECONDS);
+      }
     }
     reader.join(TimeUnit.SECONDS.toMillis(5));
+    gracefulShutdown =
+        !process.isAlive()
+            && process.exitValue() == 0
+            && !reader.isAlive()
+            && outputFailure == null;
+    if (!gracefulShutdown)
+      throw new IllegalStateException("analyzer did not shut down cleanly", outputFailure);
+  }
+
+  public boolean gracefulShutdown() {
+    return gracefulShutdown;
   }
 
   /** One decoded report and when the harness received it. */

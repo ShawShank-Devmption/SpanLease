@@ -32,6 +32,10 @@ public final class AnalyzerEngine {
   private long historySize;
   private boolean historyLimitExceeded;
   private final Map<String, TreeMap<Long, ObservationEnvelope>> streams = new LinkedHashMap<>();
+  private final Map<String, String> sentIdentities = new HashMap<>();
+  private final Map<String, String> arrivedIdentities = new HashMap<>();
+  private final Map<String, String> acquiredInvocations = new HashMap<>();
+  private final Map<String, String> acquiredExecutions = new HashMap<>();
   private final Set<String> invalidInstances = new TreeSet<>();
 
   public AnalyzerEngine(RunManifest manifest) {
@@ -66,6 +70,24 @@ public final class AnalyzerEngine {
     ObservationEnvelope existing = stream.putIfAbsent(event.localSeq(), envelope);
     if (existing != null && !existing.event().equals(event)) {
       invalidInstances.add(event.instanceId());
+    }
+    if (existing == null) {
+      if (event.payload() instanceof EventPayload.RpcInvocationSent sent)
+        claimIdentity(sentIdentities, sent.invocationId(), event);
+      else if (event.payload() instanceof EventPayload.RpcInvocationArrived arrived)
+        claimIdentity(arrivedIdentities, arrived.invocationId(), event);
+      else if (event.payload() instanceof EventPayload.ResourceAcquire acquire) {
+        claimIdentity(acquiredInvocations, acquire.invocationId(), event);
+        claimIdentity(acquiredExecutions, acquire.executionId(), event);
+      }
+    }
+  }
+
+  private void claimIdentity(Map<String, String> identities, String id, ObservationEvent event) {
+    String previous = identities.putIfAbsent(id, event.eventReference());
+    if (previous != null && !previous.equals(event.eventReference())) {
+      invalidInstances.add(event.instanceId());
+      invalidInstances.add(EventReference.parse(previous).orElseThrow().instanceId());
     }
   }
 

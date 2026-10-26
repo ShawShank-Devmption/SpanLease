@@ -78,6 +78,7 @@ tasks.register<JavaExec>("liveDemo") {
 }
 
 tasks.register<JavaExec>("scenario") {
+    workingDir(rootProject.projectDir)
     group = "application"
     description = "Finite workload runner: --args='workload bare|instrumented output-directory seed'."
     classpath = sourceSets.main.get().runtimeClasspath
@@ -87,6 +88,7 @@ tasks.register<JavaExec>("scenario") {
 }
 
 tasks.register<JavaExec>("experiments") {
+    workingDir(rootProject.projectDir)
     group = "application"
     description = "Run a recorded finite plan: --args='pilot|matrix repetitions output-directory'."
     classpath = sourceSets.main.get().runtimeClasspath

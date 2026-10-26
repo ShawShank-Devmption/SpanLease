@@ -40,6 +40,13 @@ class StatisticsTest(unittest.TestCase):
         self.assertFalse(stats.closed_at(entries, {'A': 1}, 4, {'r/2'}))
         self.assertTrue(stats.closed_at(entries, {'A': 1}, 4, {'r/2', 'r/1'}))
 
+    def test_report_after_measurement_is_not_a_successful_trial_comparison(self):
+        result = dict(truth=[], mappings=[], closed_jobs=[], outcomes=[], metrics={}, instrumented=True,
+                      measurement_ended_ms=150, reports=[dict(verdict='CONFIRMED_NO_DEADLOCK', evaluated_at_wall_ms=200)])
+        value = stats.score(result, dict(instances=[], pools=[]))
+        self.assertEqual(value['scorable_negative_reports'], 0)
+        self.assertEqual(value['verdict_counts'], {})
+
 
 if __name__ == '__main__':
     unittest.main()

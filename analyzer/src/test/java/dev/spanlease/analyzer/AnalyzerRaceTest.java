@@ -146,6 +146,18 @@ class AnalyzerRaceTest {
         .isInstanceOf(IllegalArgumentException.class);
   }
 
+  @Test
+  void r14KnownInvocationAliasesOutsideAnOlderCheckpointStillInvalidateTheRun() {
+    for (var alias :
+        List.of(
+            envelope("A", 9, "", 3_050, new EventPayload.RpcInvocationSent("inv-ab", "a0", "svcB")),
+            envelope("B", 8, "A#4", 3_050, new EventPayload.RpcInvocationArrived("inv-ab")))) {
+      var facts = new ArrayList<>(ProductionDemo.observations(false));
+      facts.add(alias);
+      assertThat(run(facts, 3_100).verdict()).isEqualTo(Verdict.INSUFFICIENT_OBSERVABILITY);
+    }
+  }
+
   private static VerdictReport run(List<ObservationEnvelope> facts, long at) {
     var engine = new AnalyzerEngine(ProductionDemo.manifest(false));
     facts.forEach(engine::ingest);
