@@ -118,3 +118,49 @@ not independent three-person review and does not satisfy G1–G3. *Why:* the pro
 authorized one implementer to proceed across all three preserved responsibility lanes.
 *Affects:* B-TYPES/C-TYPES and subsequent v2 implementation; wire-visible changes still
 require a later schema bump and contract review.
+
+
+**D15 | 2026-10-26 | The live analyzer runs in a separate JVM.** The testbed resolves
+analyzer runtime artifacts only to launch `LiveAnalyzer`; those classes never join the
+testbed compile/runtime classpaths. The analyzer receives the manifest and custom OTLP
+observations, never handler truth or expected verdicts. *Why:* preserve the module and
+truth boundary while exercising the receiver and report protocol. The current services
+and driver share one testbed JVM but represent distinct configured instance epochs;
+this is not evidence of a multi-host deployment. *Affects:* A-HARNESS, testbed launch
+configuration, live demo and integration litmus tests.
+
+**D16 | 2026-10-26 | One recorder orders each instance epoch's entire event stream.**
+Share one `InstanceRecorder` across its gates, RPC hooks and scanner. Its lock serializes
+state transitions, sequence allocation and immediate publication attempts. Failed offers
+retain their sequence positions. The demo's logical instances have separate recorders;
+do not create multiple allocators for the same instance ID. *Why:* independently
+numbered hook streams cannot certify a contiguous process prefix. *Affects:* I1/I4,
+B-GATE/B-RPC/B-SCAN and prefix certification; no schema change.
+
+**D17 | 2026-10-26 | Decode present unset OTLP values only for expected empty strings.**
+The pinned SDK's empty-string attribute can arrive as `AnyValue.VALUE_NOT_SET`. Accept
+that representation only when the validated JSON field is empty. Continue rejecting
+absent attributes, duplicates, wrong types and nonempty disagreements. *Why:* support
+the actual SDK serialization without manufacturing missing identity or causal evidence.
+*Affects:* C-INGEST and empty-attribute decoder tests; no wire field or version change.
+
+**D18 | 2026-10-26 | Unjoinable inbound calls use local external identities.** Missing,
+malformed or multiply supplied invocation metadata or caller references cannot establish
+a monitored causal join. The adapter assigns a fresh local identity and emits no joined
+arrival; admission/ownership still remain observed. A concurrently reused valid ID is
+rejected by the gate rather than admitted twice. *Why:* support entry calls from outside
+the monitored deployment without guessing a caller dependency. This is not evidence
+that a missing counterpart for a monitored caller can be discharged as progress.
+*Affects:* B-RPC/R14, application integration; no schema change.
+
+**D19 | 2026-10-26 | Complete the design's temporal witness search in the MVP.** Evaluate
+finite endpoints at assertion-duration and epsilon-narrowed lease boundaries in latest
+first order. For each endpoint, keep members with uninterrupted tau coverage and an
+eligible matching lease, then reapply closure pruning. Keep every survivor at the latest
+qualifying endpoint and report exactly `[b−tau,b]`; use the lease actually covering b in
+unit evidence. Certified observations after a retracted cut may bound its assertions;
+terminal endpoints remain half open on the millisecond timestamp grid. Temporal pruning
+to empty is inconclusive, never negative. *Why:* a newer dependent or disjoint ring must
+not reset an older closed witness, and a lease outside the selected endpoint cannot
+justify it. *Affects:* C-TIME/R9, analyzer evidence/report selection; v2 report shape and
+predicate unchanged. C-PROOF and general historical-cut search remain separate work.

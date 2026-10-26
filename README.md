@@ -27,8 +27,9 @@ HTML results are under each module's `build/reports/tests/test/`.
 
 Java modules: `common`, `instrumentation`, `testbed`, `analyzer`, `baselines`.
 `eval` is reserved for later evaluation scripts, not a placeholder Java service.
-Production implementations remain empty except generated frozen messages/stubs.
-Tests do not define public gate/event/report APIs for other developers.
+The MVP includes schema-v2 DTOs, the application gate and gRPC adapter, custom OTel
+export/OTLP ingestion, the analyzer, and a separate-process live harness. See
+[`docs/mvp-demo-guide.md`](docs/mvp-demo-guide.md) for commands and limitations.
 
 All dependency, Java, formatter and Gradle pins are in `gradle/libs.versions.toml`.
 Wrapper properties necessarily repeat the distribution URL/checksum as generated
@@ -37,9 +38,11 @@ bootstrap metadata. After an approved Gradle pin change, regenerate with
 directories and is excluded from handwritten-source formatting. grpc-java's
 `@generated=omit` option avoids adding a legacy annotation dependency.
 
-`integrationTest` is intentionally absent until I-CI supplies the real end-to-end
-detector litmus tests. A successful bootstrap build is not G0, G1 or G2 acceptance.
-CI runs the real build unconditionally; it no longer treats a skipped build as success.
+`./gradlew :testbed:integrationTest` runs the real gRPC/OTLP closed-ring and
+spare-capacity litmus assertions with a separate analyzer JVM. CI runs both `build`
+and these integration tests and uploads their reports and live-run evidence.
+G0's solo review is recorded in `docs/stage0-g0-review.md`; these MVP regressions
+do not establish G1 or G2 acceptance.
 
 ## Pre-G0 model MVP
 

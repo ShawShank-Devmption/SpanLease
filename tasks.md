@@ -20,11 +20,27 @@ explicitly permits a draft handoff.
   limitations are recorded in `docs/stage0-g0-review.md`.
 - **G0:** approved on 2026-09-22 under D13/D14 for solo schema-v2 implementation.
   Independent review is not claimed; G1–G3 remain pending.
-- **Stage-1 implementation in progress:** B-TYPES and C-TYPES are implemented in
-  `common`; B-GATE has ordered admission/exit, overflow and loss-gap tests; the blocking
-  RPC lifecycle API, bounded OTel sink, OTLP decoder and finite-run analyzer core are
-  implemented. B-RPC's reusable grpc adapter, scheduled B-SCAN, bounded OTLP receiver,
-  independent A runtime/truth path and the complete R1–R16/G1 evidence remain pending.
+- **Stage-1 implementation in progress:** common DTOs, the bounded application gate,
+  reusable gRPC adapter/blocking helper, scheduled leases/checkpoints, bounded OTel
+  exporter/OTLP receiver, finite-run analyzer and separate-process live harness exist.
+  Two live Chain scenarios now have integration assertions, and CI invokes them.
+- **MVP finish-up — 2026-10-26:** C-TIME now enumerates assertion/lease endpoints and
+  repeats closure pruning on temporally qualified members; regressions cover upstream
+  dependents, disjoint rings, wait identity changes, stale ticks and lease boundaries
+  (R9). `AdapterGrpcTest` adds real-gRPC R2/R14/R16 orderings. `LiveLitmusTest` checks the
+  exact closed-ring execution/queue/slot evidence and spare-capacity progress through
+  real SDK/OTLP and a separate analyzer JVM. These are early MVP regressions, not a
+  waiver of I-LITMUS/I-CI prerequisites or acceptance of G1/G2.
+- **Finish-up verification:** Java 21 `./gradlew --no-daemon build
+  :testbed:integrationTest` passed locally, including both live litmus tests, six real
+  adapter tests and twelve C-TIME persistence regressions. Formatting and module-boundary
+  checks passed. Remote CI execution and gate acceptance are not claimed.
+- **Still open:** A-TRUTH is only a handler journal, without gate decisions or bare-mode
+  operation. A-TRIGGER still needs k>1 saturation, saturation without cycles, slow chain,
+  upstream/disjoint live scenarios, cancellation orderings and queue rejection.
+  B-INTEGRATE's mode switch, A-FAULT, C-REPLAY, C-PROOF, B-INTEROP and analyzer race
+  coverage R5–R7/R10/R12/R13/R15 remain open. G1–G3, Stage 3 baselines and Stage 4
+  runs/statistics/manuscript remain pending.
 
 ## 1. Ownership and working rules
 

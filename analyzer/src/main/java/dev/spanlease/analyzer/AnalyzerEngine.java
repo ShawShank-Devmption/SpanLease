@@ -122,7 +122,8 @@ public final class AnalyzerEngine {
           coverage(List.of()));
     }
 
-    PersistenceResult persistence = qualifyPersistence(state, residual, certification);
+    PersistenceResult persistence =
+        qualifyPersistence(state, residual, certification, cutResult.cut());
     if (persistence.persistence() == null) {
       return report(
           Verdict.CANDIDATE_INCONCLUSIVE,
@@ -137,7 +138,11 @@ public final class AnalyzerEngine {
         evaluationWallMs,
         cutResult.cut(),
         persistence.persistence(),
-        diagnosticCore(state, executionsIn(residual, state), queuesIn(residual, state)),
+        diagnosticCore(
+            state,
+            executionsIn(persistence.members(), state),
+            queuesIn(persistence.members(), state),
+            persistence.persistence().lastMs()),
         coverage(List.of()));
   }
 
@@ -313,7 +318,10 @@ public final class AnalyzerEngine {
       }
     } else if (payload instanceof EventPayload.ExecutionLease lease) {
       ExecutionState execution = state.executions.get(lease.executionId());
-      if (execution == null || !lease.blockRef().equals(execution.blockRef)) {
+      if (execution == null
+          || !lease.blockRef().equals(execution.blockRef)
+          || !lease.startRef().equals(execution.acquireRef)
+          || !lease.invocationId().equals(execution.blockInvocation)) {
         state.missing.add(
             new VerdictReport.MissingEvidence("INVALID_EVENT", event.eventReference()));
       } else {
@@ -361,6 +369,12 @@ public final class AnalyzerEngine {
     Set<String> candidates = new TreeSet<>();
     candidates.addAll(state.blockedExecutions());
     candidates.addAll(state.waitingInvocations());
+    return pruneClosed(state, candidates);
+  }
+
+  /** Also used for temporal pruning: removal means unavailable to this witness, not progress. */
+  private Set<String> pruneClosed(Reconstructed state, Set<String> initial) {
+    Set<String> candidates = new TreeSet<>(initial);
     boolean changed;
     do {
       changed = false;
@@ -394,40 +408,117 @@ public final class AnalyzerEngine {
   }
 
   private PersistenceResult qualifyPersistence(
-      Reconstructed state, Set<String> residual, Certification certification) {
+      Reconstructed state,
+      Set<String> residual,
+      Certification certification,
+      Map<String, Long> cut) {
     long epsilon = manifest.parameters().epsilonMs();
-    long start = Long.MIN_VALUE;
+    long tau = manifest.parameters().persistenceMs();
+    Map<String, Long> starts = new TreeMap<>();
+    Map<String, Long> ends = new TreeMap<>();
+    TreeSet<Long> endpoints = new TreeSet<>(java.util.Comparator.reverseOrder());
     for (String member : residual) {
       ExecutionState execution = state.executions.get(member);
+      String instance;
+      long start;
       if (execution != null) {
-        start =
-            Math.max(start, Math.max(execution.acquireStartMs, execution.blockStartMs) + epsilon);
+        instance = EventReference.parse(execution.acquireRef).orElseThrow().instanceId();
+        start = Math.max(execution.acquireStartMs, execution.blockStartMs) + epsilon;
       } else {
-        start = Math.max(start, state.waiting.get(member).startMs + epsilon);
+        WaitState wait = state.waiting.get(member);
+        instance = wait.instanceId;
+        start = wait.startMs + epsilon;
+      }
+      long end = certification.checkpoints().get(instance).event().wallTimeMs() - epsilon;
+      // A causal retraction does not erase certified later closing observations. Never extend
+      // the cut's current assertion through a later unblock, cancellation or ownership change.
+      long certified = certification.cut().get(instance);
+      for (ObservationEnvelope envelope :
+          streams.get(instance).subMap(cut.get(instance), false, certified, true).values()) {
+        if (closesAssertion(envelope.event().payload(), execution, member)) {
+          // Terminal intervals are half open; endpoints use the contract's millisecond grid.
+          end = Math.min(end, envelope.event().wallTimeMs() - epsilon - 1);
+          break;
+        }
+        if (execution != null
+            && envelope.event().payload() instanceof EventPayload.ExecutionLease lease
+            && lease.executionId().equals(member)
+            && lease.blockRef().equals(execution.blockRef)
+            && lease.startRef().equals(execution.acquireRef)
+            && lease.invocationId().equals(execution.blockInvocation)) {
+          execution.leases.add(
+              new LeaseState(
+                  envelope.event().eventReference(),
+                  envelope.event().wallTimeMs(),
+                  lease.leaseExpiryMs()));
+        }
+      }
+      starts.put(member, start);
+      ends.put(member, end);
+      endpoints.add(start + tau);
+      endpoints.add(end);
+      if (execution != null) {
+        for (LeaseState lease : execution.leases) {
+          endpoints.add(lease.observedMs() + epsilon);
+          endpoints.add(Math.min(end, lease.expiryMs() - epsilon));
+        }
       }
     }
-    long end = Long.MAX_VALUE;
-    for (ObservationEnvelope checkpoint : certification.checkpoints().values()) {
-      end = Math.min(end, checkpoint.event().wallTimeMs() - epsilon);
+
+    for (long endpoint : endpoints) {
+      Set<String> eligible = new TreeSet<>();
+      for (String member : residual) {
+        ExecutionState execution = state.executions.get(member);
+        if (starts.get(member) <= endpoint - tau
+            && endpoint <= ends.get(member)
+            && (execution == null || execution.leaseCovering(endpoint, epsilon) != null)) {
+          eligible.add(member);
+        }
+      }
+      Set<String> witness = pruneClosed(state, eligible);
+      if (!witness.isEmpty()) {
+        return new PersistenceResult(
+            new VerdictReport.Persistence(endpoint - tau, endpoint, tau, tau), witness, List.of());
+      }
     }
 
     List<VerdictReport.MissingEvidence> missing = new ArrayList<>();
-    for (String member : residual) {
+    for (String member : new TreeSet<>(residual)) {
       ExecutionState execution = state.executions.get(member);
-      if (execution != null && execution.leaseCovering(end, epsilon) == null) {
+      long end = ends.get(member);
+      boolean enoughHistory = starts.get(member) <= end - tau;
+      if (!enoughHistory) {
+        missing.add(new VerdictReport.MissingEvidence("PERSISTENCE_TOO_SHORT", member));
+      }
+      if (execution != null
+          && execution.leases.stream()
+              .noneMatch(
+                  lease ->
+                      Math.max(starts.get(member) + tau, lease.observedMs() + epsilon)
+                          <= Math.min(end, lease.expiryMs() - epsilon))) {
         missing.add(new VerdictReport.MissingEvidence("EXPIRED_LEASE", member));
       }
     }
-    long duration = end >= start ? end - start : 0;
-    if (duration < manifest.parameters().persistenceMs()) {
-      missing.add(new VerdictReport.MissingEvidence("PERSISTENCE_TOO_SHORT", "residual"));
+    if (missing.isEmpty()) {
+      missing.add(new VerdictReport.MissingEvidence("NO_PERSISTENT_CLOSED_SET", "residual"));
     }
-    if (!missing.isEmpty()) {
-      return new PersistenceResult(null, List.copyOf(missing));
+    return new PersistenceResult(null, Set.of(), List.copyOf(missing));
+  }
+
+  private static boolean closesAssertion(
+      EventPayload payload, ExecutionState execution, String member) {
+    if (execution == null) {
+      return (payload instanceof EventPayload.ResourceAcquire acquire
+              && acquire.invocationId().equals(member))
+          || (payload instanceof EventPayload.ExecutionCancel cancel
+              && cancel.invocationId().equals(member));
     }
-    return new PersistenceResult(
-        new VerdictReport.Persistence(start, end, duration, manifest.parameters().persistenceMs()),
-        List.of());
+    return (payload instanceof EventPayload.RpcBlockEnd end && end.executionId().equals(member))
+        || (payload instanceof EventPayload.ExecutionCancel cancel
+            && cancel.executionId().equals(member))
+        || (payload instanceof EventPayload.ExecutionEnd end && end.executionId().equals(member))
+        || (payload instanceof EventPayload.ResourceRelease release
+            && release.executionId().equals(member));
   }
 
   private VerdictReport report(
@@ -474,8 +565,14 @@ public final class AnalyzerEngine {
 
   private VerdictReport.Core diagnosticCore(
       Reconstructed state, Set<String> executions, Set<String> queues) {
+    return diagnosticCore(state, executions, queues, null);
+  }
+
+  private VerdictReport.Core diagnosticCore(
+      Reconstructed state, Set<String> executions, Set<String> queues, Long endpoint) {
     List<VerdictReport.Execution> executionReports =
         executions.stream()
+            .sorted()
             .map(state.executions::get)
             .map(
                 execution ->
@@ -487,6 +584,7 @@ public final class AnalyzerEngine {
             .toList();
     List<VerdictReport.QueueEntry> queueReports =
         queues.stream()
+            .sorted()
             .map(state.waiting::get)
             .map(
                 wait ->
@@ -497,6 +595,7 @@ public final class AnalyzerEngine {
     List<VerdictReport.Unit> units =
         state.unitOwners.entrySet().stream()
             .filter(entry -> entry.getValue() != null && owners.contains(entry.getValue()))
+            .sorted(Map.Entry.comparingByKey())
             .map(
                 entry -> {
                   ExecutionState owner = state.executions.get(entry.getValue());
@@ -504,21 +603,25 @@ public final class AnalyzerEngine {
                       entry.getKey(),
                       owner.id,
                       owner.acquireRef,
-                      owner.leases.isEmpty() ? "" : owner.leases.getLast().reference());
+                      endpoint == null
+                          ? (owner.leases.isEmpty() ? "" : owner.leases.getLast().reference())
+                          : owner
+                              .leaseCovering(endpoint, manifest.parameters().epsilonMs())
+                              .reference());
                 })
             .toList();
     List<VerdictReport.Edge> edges = new ArrayList<>();
     for (VerdictReport.Unit unit : units) {
       edges.add(new VerdictReport.Edge(unit.id(), unit.ownerExecutionId(), "own"));
     }
-    for (String executionId : executions) {
+    for (String executionId : new TreeSet<>(executions)) {
       ExecutionState execution = state.executions.get(executionId);
       String counterpart = state.executionByInvocation.get(execution.blockInvocation);
       edges.add(
           new VerdictReport.Edge(
               executionId, counterpart == null ? execution.blockInvocation : counterpart, "wait"));
     }
-    for (String queue : queues) {
+    for (String queue : new TreeSet<>(queues)) {
       WaitState wait = state.waiting.get(queue);
       String pool = wait.instanceId + ":" + wait.resourceId;
       edges.add(new VerdictReport.Edge(queue, pool, "queue-wait"));
@@ -554,7 +657,9 @@ public final class AnalyzerEngine {
   private record CutResult(Map<String, Long> cut, List<VerdictReport.MissingEvidence> missing) {}
 
   private record PersistenceResult(
-      VerdictReport.Persistence persistence, List<VerdictReport.MissingEvidence> missing) {}
+      VerdictReport.Persistence persistence,
+      Set<String> members,
+      List<VerdictReport.MissingEvidence> missing) {}
 
   private record EventReference(String instanceId, long sequence) {
     private static Optional<EventReference> parse(String value) {

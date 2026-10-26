@@ -57,6 +57,7 @@ tasks.register<Test>("integrationTest") {
     classpath = integrationTest.runtimeClasspath
     inputs.files(analyzerRuntime)
     jvmArgumentProviders.add(analyzerClasspath)
+    systemProperty("spanlease.integration.runs", layout.buildDirectory.dir("integration-runs").get().asFile.absolutePath)
     shouldRunAfter(tasks.test)
 }
 

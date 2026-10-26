@@ -59,7 +59,11 @@ val verifyModuleBoundaries by tasks.registering {
         )
         allowedProjects.forEach { (path, allowed) ->
             val owner = project(path)
-            listOf("compileClasspath", "runtimeClasspath", "testCompileClasspath", "testRuntimeClasspath").forEach { name ->
+            val classpaths = mutableListOf("compileClasspath", "runtimeClasspath", "testCompileClasspath", "testRuntimeClasspath")
+            if (path == ":testbed") {
+                classpaths += listOf("integrationTestCompileClasspath", "integrationTestRuntimeClasspath")
+            }
+            classpaths.forEach { name ->
                 val configuration = owner.configurations.getByName(name)
                 configuration.resolve()
                 configuration.incoming.resolutionResult.allComponents.forEach { component ->
