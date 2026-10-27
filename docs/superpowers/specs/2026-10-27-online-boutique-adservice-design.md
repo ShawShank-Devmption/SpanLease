@@ -1,6 +1,6 @@
 # Online Boutique Ad Service monitor integration
 
-Date: 2026-10-27. Status: proposed design awaiting owner review; not implemented.
+Date: 2026-10-27. Status: owner approved on 2026-10-27; implementation not started.
 Owner: Dev A for the application/demo harness, using existing Dev B instrumentation
 and Dev C analyzer interfaces without changing their contracts.
 
