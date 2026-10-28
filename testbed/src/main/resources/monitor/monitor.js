@@ -1,24 +1,61 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name="control-token"]').content;
-let currentRun = '', lastSignature = '', offline = false;
+let currentRun = '', lastSignature = '', offline = false, latestState = null, controlError = '', injecting = false;
+const scenarios = {synthetic: [['closed-ring','Closed ring · A → B → C → A'],['spare-capacity','Spare capacity · A has two workers'],['slow-progress','Slow progress · finite leaf work']], boutique: [['boutique-live','Live store traffic (healthy)'],['boutique-deadlock','Injected deadlock · ads-a → ads-b → ads-c → ads-a'],['boutique-spare-capacity','Spare capacity · ads-a has two workers']]};
+function selectSource(source, selected) {
+  for (const radio of document.querySelectorAll('#source-toggle input')) radio.checked = radio.value === source;
+  const options = scenarios[source];
+  if (!options.some(([id]) => id === $('scenario').value)) { $('scenario').replaceChildren(...options.map(([id,label]) => { const option = text('option',label); option.value = id; return option; })); }
+  if (selected && options.some(([id]) => id === selected)) $('scenario').value = selected;
+}
+function renderBoutique(state) {
+  const boutique = state.application === 'BOUTIQUE';
+  const selectedBoutique = document.querySelector('#source-toggle input:checked').value === 'boutique';
+  $('inject').hidden = !selectedBoutique || $('scenario').value === 'boutique-live';
+  $('inject').disabled = !boutique || !state.injectable || injecting;
+  $('store-panel').hidden = !boutique;
+  const store = state.store;
+  const validStore = boutique && /^http:\/\/(localhost|127\.0\.0\.1):\d{1,5}$/.test(store?.store_url || '');
+  $('store-link').hidden = !validStore;
+  $('store-link').removeAttribute('href');
+  if (validStore) $('store-link').href = store.store_url;
+  $('store-stats').replaceChildren(); $('store-ads').replaceChildren(); $('fault').replaceChildren();
+  if (!boutique) return;
+  $('store-stats').append(text('p', store ? `Forwarded ${store.forwarded} · OK ${store.ok} · deadline exceeded ${store.deadline_exceeded} · failed ${store.failed} · edge port ${store.edge_port}` : 'Waiting for store traffic statistics…'));
+  const ads = (target, entries) => { for (const ad of entries || []) { const node = text(/^\/product\/[A-Z0-9]{10}$/.test(ad.redirect_url) ? 'a' : 'p', ad.text); if (node.tagName === 'A') { node.href = `http://localhost:8080${ad.redirect_url}`; node.target = '_blank'; node.rel = 'noopener noreferrer'; } target.append(node); } };
+  ads($('store-ads'),store?.recent_ads);
+  if (state.injected_at_ms != null) $('fault').append(text('p',`Fault injected at ${new Date(state.injected_at_ms).toLocaleTimeString()}`));
+  if (state.fault_outcome) $('fault').append(text('p',`Fault outcome: ${state.fault_outcome}`));
+  ads($('fault'),state.fault_ads);
+}
 const text = (tag, value, className) => { const node = document.createElement(tag); node.textContent = value; if (className) node.className = className; return node; };
 const kind = envelope => envelope.event.payload.event_type;
 const short = value => value ? String(value).replace(/@[a-f0-9-]+/g, '').replace(/^([a-f0-9]{8})[a-f0-9-]{28}$/, '$1…') : '—';
 const relative = (time, start) => `${Math.max(0, (time - start) / 1000).toFixed(2)}s`;
 function render(state) {
   const openDetails = new Set([...document.querySelectorAll('details[data-key][open]')].map(node => node.dataset.key));
+  latestState = state;
+  const active = state.application_alive || state.phase === 'RUNNING';
+  const application = state.application || 'CHAIN';
+  if (active) {
+    const source = application === 'BOUTIQUE' ? 'boutique' : 'synthetic';
+    const selected = scenarios[source].find(([id]) => state.manifest?.run_id?.startsWith(`${id}-`))?.[0];
+    selectSource(source, selected);
+  }
+  for (const radio of document.querySelectorAll('#source-toggle input')) radio.disabled = active;
+  renderBoutique(state);
   const manifest = state.manifest;
   const run = manifest?.run_id || '';
-  if (currentRun !== run) { currentRun = run; lastSignature = ''; }
-  $('source').textContent = state.data_source;
+  if (currentRun !== run) { currentRun = run; lastSignature = ''; injecting = false; }
+  $('source').textContent = `${state.data_source || application} · ${state.native_method || 'spanlease.testbed.Chain/Call'}`;
   $('run-id').textContent = run || 'No active run';
   $('records').textContent = state.observed_total;
   $('phase').textContent = state.phase === 'STOPPED' ? 'STOPPED' : state.phase;
   $('confirmed').textContent = state.first_deadlock ? 'YES · CONFIRMED' : '—';
-  $('start').disabled = state.phase === 'RUNNING';
-  $('scenario').disabled = state.phase === 'RUNNING';
-  $('control-note').textContent = state.error || (state.phase === 'RUNNING' ? 'Closed ring stays blocked until you kill its workload PID. Control scenarios finish normally.' : 'One run at a time. Every request and verdict is computed live.');
+  $('start').disabled = active;
+  $('scenario').disabled = active;
+  $('control-note').textContent = controlError || state.error || (active ? (state.manual_stop ?? (application === 'CHAIN' && $('scenario').value === 'closed-ring') ? 'Stop this workload with its PID when finished.' : 'The workload is running.') : 'One run at a time. Every request and verdict is computed live.');
   if (!manifest) return;
   const serviceByInstance = Object.fromEntries(manifest.instances.map(instance => [instance.instance_id, instance.service_binding]));
   const observations = state.observations;
@@ -37,23 +74,25 @@ function render(state) {
   $('call-count').textContent = `${arrivals.size} received call${arrivals.size === 1 ? '' : 's'}`;
   const services = $('services'); services.replaceChildren();
   for (const pool of manifest.pools) {
-    const events = (byInstance.get(pool.instance_id) || []).sort((a,b) => a.local_seq - b.local_seq);
-    const owners = new Map(pool.unit_ids.map(unit => [unit, 'unknown'])), blocks = new Set(), queued = new Set();
-    let lastSeq = 0;
-    for (const e of events) {
-      const p = e.payload; lastSeq = Math.max(lastSeq, e.local_seq);
-      if (p.event_type === 'resource.init' && p.resource_id === pool.resource_id) for (const id of p.unit_ids) owners.set(id, null);
-      if (p.event_type === 'resource.acquire') { owners.set(p.resource_instance_id, p.execution_id); queued.delete(p.invocation_id); }
-      if (p.event_type === 'resource.release') { owners.set(p.resource_instance_id, null); blocks.delete(p.execution_id); }
-      if (p.event_type === 'resource.wait.begin') queued.add(p.invocation_id);
-      if (p.event_type === 'execution.cancel' && !p.execution_id) queued.delete(p.invocation_id);
-      if (p.event_type === 'rpc.block.begin') blocks.add(p.execution_id);
-      if (p.event_type === 'rpc.block.end' || p.event_type === 'execution.end') blocks.delete(p.execution_id);
+    const latestUnits = new Map((state.unit_latest || []).filter(unit => unit.instance_id === pool.instance_id).map(unit => [unit.unit_id,unit]));
+    const owners = new Map(pool.unit_ids.map(id => { const unit = latestUnits.get(id); return [id, unit?.state === 'free' ? null : unit?.state === 'held' ? unit.execution_id : 'unknown']; }));
+    let lastSeq = Math.max(0, ...[...latestUnits.values()].map(unit => unit.local_seq));
+    // Compatibility with Chain snapshots before the bounded latest-unit handoff.
+    if (!state.unit_latest && application === 'CHAIN' && !state.discarded_observations) {
+      for (const event of [...(byInstance.get(pool.instance_id) || [])].sort((a,b) => a.local_seq - b.local_seq)) {
+        lastSeq = Math.max(lastSeq,event.local_seq);
+        const payload = event.payload;
+        if (payload.event_type === 'resource.init' && payload.resource_id === pool.resource_id) for (const id of payload.unit_ids) if (owners.has(id)) owners.set(id,null);
+        if (owners.has(payload.resource_instance_id)) {
+          if (payload.event_type === 'resource.acquire') owners.set(payload.resource_instance_id,payload.execution_id);
+          if (payload.event_type === 'resource.release') owners.set(payload.resource_instance_id,null);
+        }
+      }
     }
     const exited = state.application_pid && !state.application_alive;
     const card = text('div', '', exited ? 'service stopped' : 'service'); card.append(text('h3', `${serviceByInstance[pool.instance_id]}${exited ? ' · STOPPED' : ''}`));
     card.append(text('p', `${pool.unit_ids.length} declared worker${pool.unit_ids.length === 1 ? '' : 's'} · seq ${lastSeq || '—'}`));
-    card.append(text('p', state.discarded_observations ? 'State unknown · display history truncated' : `${exited ? 'Last telemetry: ' : ''}${blocks.size} blocked · ${queued.size} queued`));
+    card.append(text('p', state.unit_latest ? 'Latest received observation per slot' : 'Bounded display history · unknown if truncated'));
     const slots = text('div', '', 'slots');
     for (const unit of pool.unit_ids) { const owner = owners.get(unit); const slot = text('span', '', `slot ${owner === 'unknown' ? 'unknown' : owner ? 'held' : ''}`); slot.title = `${exited ? 'Historical observation: ' : ''}${short(unit)}: ${owner === 'unknown' ? 'unknown' : owner ? short(owner) : 'observed free'}`; slots.append(slot); }
     card.append(slots); services.append(card);
@@ -134,17 +173,17 @@ function render(state) {
     if (incidentSample) result.append(text('p',`Associated runtime sample: ${when(incidentSample.sampled_at_wall_ms)}. A diagnostic sample is not a certified simultaneous snapshot.`, 'caption'));
   } else {
     $('evidence-label').textContent = state.phase === 'COMPLETE' ? 'Run completed' : 'No confirmed deadlock';
-    result.append(text('p', state.phase === 'COMPLETE' ? `Root outcome: ${state.root_outcome} · ${state.root_hops_completed} hops completed.` : state.phase === 'STOPPED' ? 'The workload exited before a deadlock was confirmed.' : 'Waiting for the analyzer to certify complete evidence.', state.phase === 'COMPLETE' && state.root_outcome === 'OK' ? 'result-good' : 'muted'));
+    result.append(text('p', state.phase === 'COMPLETE' ? `Root outcome: ${state.root_outcome} · ${application === 'CHAIN' ? `${state.root_hops_completed} hops completed.` : ''}` : state.phase === 'STOPPED' ? 'The workload exited before a deadlock was confirmed.' : 'Waiting for the analyzer to certify complete evidence.', state.phase === 'COMPLETE' && state.root_outcome === 'OK' ? 'result-good' : 'muted'));
   }
   if (state.artifacts) result.append(text('p',state.artifacts,'caption'));
   const process = $('process'); process.replaceChildren();
   $('process-status').textContent = state.application_pid ? state.application_alive ? 'RUNNING · separate workload JVM' : `EXITED · code ${state.exit_code ?? 'pending'}` : 'Starting workload…';
   if (state.application_pid) {
     process.append(text('p', `Workload PID: ${state.application_pid}`, 'pid'));
-    process.append(text('p', 'svcA, svcB and svcC share this workload JVM. The monitor and analyzer run separately.', 'muted'));
+    process.append(text('p', `${manifest.instances.filter(instance => instance.service_binding !== 'driver').map(instance => instance.service_binding).join(', ')} share this workload JVM. The monitor and analyzer run separately.`, 'muted'));
     if (state.application_alive) {
-      process.append(text('p', 'To stop all three services, run this in your terminal:', 'muted'), text('code', `kill -TERM ${state.application_pid}`, 'kill-command'));
-      process.append(text('p', run.startsWith('closed-ring-') ? 'Interactive closed ring: no eight-second stop and no RPC deadline. The page observes PID exit automatically.' : 'Finite control: normal completion or the propagated 30-second RPC deadline ends the call.', 'caption'));
+      process.append(text('p', 'To stop the workload services, run this in your terminal:', 'muted'), text('code', `kill -TERM ${state.application_pid}`, 'kill-command'));
+      process.append(text('p', (state.manual_stop ?? ($('scenario').value === 'closed-ring')) ? 'Manual stop: the page observes workload PID exit automatically.' : 'Finite control: normal completion or the propagated 30-second RPC deadline ends the call.', 'caption'));
     } else process.append(text('p', 'Application stopped. Its workers are no longer running. Historical reports and sampled diagnostics remain available.', 'muted'));
   }
   const runtime = $('runtime'); runtime.replaceChildren();
@@ -174,8 +213,18 @@ async function poll() {
 }
 $('start').addEventListener('click',async () => {
   if (offline) return;
+  controlError = '';
   $('start').disabled = true;
   try { const response = await fetch(`/api/run?scenario=${encodeURIComponent($('scenario').value)}`, {method:'POST',headers:{'X-SpanLease-Control':token}}); if (!response.ok) throw new Error(await response.text()); }
-  catch(error) { $('control-note').textContent = error.message; $('start').disabled = false; }
+  catch(error) { controlError = error.message; $('control-note').textContent = controlError; $('start').disabled = false; }
+});
+selectSource('synthetic');
+for (const radio of document.querySelectorAll('#source-toggle input')) radio.addEventListener('change', () => { selectSource(radio.value); renderBoutique(latestState || {}); });
+$('scenario').addEventListener('change', () => renderBoutique(latestState || {}));
+$('inject').addEventListener('click', async () => {
+  if (offline || injecting || !latestState?.injectable) return;
+  injecting = true; controlError = ''; $('inject').disabled = true;
+  try { const response = await fetch('/api/inject', {method:'POST',headers:{'X-SpanLease-Control':token}}); if (!response.ok) throw new Error(await response.text()); }
+  catch (error) { controlError = error.message; $('control-note').textContent = controlError; injecting = false; }
 });
 poll();
