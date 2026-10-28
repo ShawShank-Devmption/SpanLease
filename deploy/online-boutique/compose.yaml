@@ -1,0 +1,98 @@
+# Copyright 2025 Google LLC. Licensed under the Apache License, Version 2.0.
+# Upstream manifest adapted for the local SpanLease demo.
+# Provenance, immutable digests, platforms and port transformations: third_party/online-boutique/SOURCE.md.
+name: spanlease-boutique
+services:
+  frontend:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/frontend:v0.10.7@sha256:e1cbd4561d3c9d27497dc0e8b1c12da194c4bf2ea82648f58bf38f073698f483
+    platform: linux/amd64
+    ports: ["127.0.0.1:8080:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      PORT: "8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: productcatalogservice:3550
+      CURRENCY_SERVICE_ADDR: currencyservice:7000
+      CART_SERVICE_ADDR: cartservice:7070
+      RECOMMENDATION_SERVICE_ADDR: recommendationservice:8080
+      SHIPPING_SERVICE_ADDR: shippingservice:50051
+      CHECKOUT_SERVICE_ADDR: checkoutservice:5050
+      AD_SERVICE_ADDR: host.docker.internal:9555
+      SHOPPING_ASSISTANT_SERVICE_ADDR: shoppingassistantservice:80
+      ENABLE_PROFILER: "0"
+    depends_on: [productcatalogservice, currencyservice, cartservice, recommendationservice, shippingservice, checkoutservice]
+
+  productcatalogservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/productcatalogservice:v0.10.7@sha256:ba573405e9b03ea29970185eeaf0a9de9db7400b9104695e39d4dfc0fb651cb5
+    platform: linux/amd64
+    environment:
+      PORT: "3550"
+      DISABLE_PROFILER: "1"
+
+  currencyservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/currencyservice:v0.10.7@sha256:c581681bbf9abec8563e520aac3f3dbe3e7498853b6eb263193bc80c87e42f74
+    platform: linux/amd64
+    environment:
+      PORT: "7000"
+      DISABLE_PROFILER: "1"
+
+  cartservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice:v0.10.7@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e
+    platform: linux/amd64
+    environment:
+      REDIS_ADDR: redis-cart:6379
+    depends_on: [redis-cart]
+
+  redis-cart:
+    image: redis:alpine@sha256:47b08295737773de3b711fb86f13ae802f5074e96a9a2d29f5f80164ac08c046
+
+  recommendationservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/recommendationservice:v0.10.7@sha256:69291992f5511e9199d08c24a3ceb6470b39461933304fbdad1c7ddfc7358fd9
+    platform: linux/amd64
+    environment:
+      PORT: "8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: productcatalogservice:3550
+      DISABLE_PROFILER: "1"
+    depends_on: [productcatalogservice]
+
+  shippingservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice:v0.10.7@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4
+    platform: linux/amd64
+    environment:
+      PORT: "50051"
+      DISABLE_PROFILER: "1"
+
+  checkoutservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/checkoutservice:v0.10.7@sha256:f0e72ff7b438dd2e8776fb142d5132cfa5ba02c523466f1491270c576412d33f
+    platform: linux/amd64
+    environment:
+      PORT: "5050"
+      PRODUCT_CATALOG_SERVICE_ADDR: productcatalogservice:3550
+      SHIPPING_SERVICE_ADDR: shippingservice:50051
+      PAYMENT_SERVICE_ADDR: paymentservice:50051
+      EMAIL_SERVICE_ADDR: emailservice:8080
+      CURRENCY_SERVICE_ADDR: currencyservice:7000
+      CART_SERVICE_ADDR: cartservice:7070
+    depends_on: [productcatalogservice, shippingservice, paymentservice, emailservice, currencyservice, cartservice]
+
+  paymentservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/paymentservice:v0.10.7@sha256:e1ff27c553f7e0c31f4a10f1950ec0ee34cd41d77dd819b1fcfa139273891602
+    platform: linux/amd64
+    environment:
+      PORT: "50051"
+      DISABLE_PROFILER: "1"
+
+  emailservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/emailservice:v0.10.7@sha256:1142813191b50f7e74bd1d8957d3b272496e9648b745d2c9914752b94356eade
+    platform: linux/amd64
+    environment:
+      PORT: "8080"
+      DISABLE_PROFILER: "1"
+
+  loadgenerator:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/loadgenerator:v0.10.7@sha256:f86f07c0da48bc00e7843e060b6811b56b1ad8a184d3962f5e80e15f42370cc8
+    platform: linux/amd64
+    environment:
+      FRONTEND_ADDR: frontend:8080
+      USERS: "3"
+      RATE: "1"
+    depends_on: [frontend]
