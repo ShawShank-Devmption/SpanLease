@@ -11,16 +11,17 @@ import io.grpc.StatusRuntimeException;
 
 /** Application-only fault metadata; absent metadata always means ordinary local GetAds handling. */
 final class BoutiqueFaults {
+  static final int ABSENT = -1;
   static final Metadata.Key<String> HOPS =
       Metadata.Key.of("x-spanlease-boutique-hops", Metadata.ASCII_STRING_MARSHALLER);
   static final Context.Key<Integer> REMAINING =
-      Context.keyWithDefault("boutique-diagnostic-hops", 0);
+      Context.keyWithDefault("boutique-diagnostic-hops", ABSENT);
 
   private BoutiqueFaults() {}
 
   static int parse(Metadata headers, boolean enabled) {
     Iterable<String> values = headers.getAll(HOPS);
-    if (values == null) return 0;
+    if (values == null) return ABSENT;
     var iterator = values.iterator();
     String value = iterator.next();
     if (!enabled

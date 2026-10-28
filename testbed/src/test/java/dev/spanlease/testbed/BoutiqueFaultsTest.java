@@ -12,8 +12,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 class BoutiqueFaultsTest {
   @Test
   void missingMetadataIsAlwaysLocalAndCanonicalBudgetsAreBounded() {
-    assertThat(BoutiqueFaults.parse(new Metadata(), false)).isZero();
-    assertThat(BoutiqueFaults.parse(new Metadata(), true)).isZero();
+    assertThat(BoutiqueFaults.parse(new Metadata(), false)).isEqualTo(BoutiqueFaults.ABSENT);
+    assertThat(BoutiqueFaults.parse(new Metadata(), true)).isEqualTo(BoutiqueFaults.ABSENT);
     for (int value = 0; value <= 3; value++)
       assertThat(BoutiqueFaults.parse(BoutiqueFaults.headers(value), true)).isEqualTo(value);
   }

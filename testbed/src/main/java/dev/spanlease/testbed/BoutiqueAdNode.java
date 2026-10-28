@@ -166,7 +166,9 @@ final class BoutiqueAdNode implements AutoCloseable {
   private Demo.AdResponse handle(
       SlotTrackingExecutor.ExecutionContext execution, Demo.AdRequest request, int budget) {
     diagnostics.enter(service, execution);
-    journal.record(service, "boutique-root-1", budget + 1, HandlerJournal.Boundary.RUN);
+    if (budget != BoutiqueFaults.ABSENT) {
+      journal.record(service, "boutique-root-1", budget + 1, HandlerJournal.Boundary.RUN);
+    }
     try {
       if (budget > 0) {
         ManagedChannel peer = peers.get(nextService);
@@ -187,23 +189,27 @@ final class BoutiqueAdNode implements AutoCloseable {
               service, "boutique-root-1", budget + 1, HandlerJournal.Boundary.CALL_RETURN);
         }
       }
-      // Finite fault-control work, not synchronization or stock Boutique latency.
-      long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(leafWorkMs);
-      for (long remaining = leafWorkMs;
-          remaining > 0;
-          remaining = TimeUnit.NANOSECONDS.toMillis(until - System.nanoTime())) {
-        if (Context.current().isCancelled()) throw Status.CANCELLED.asRuntimeException();
-        try {
-          Thread.sleep(Math.min(remaining, 20));
-        } catch (InterruptedException interrupted) {
-          Thread.currentThread().interrupt();
-          throw Status.CANCELLED.asRuntimeException();
+      if (budget == 0) {
+        // Finite fault-control work, not synchronization or stock Boutique latency.
+        long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(leafWorkMs);
+        for (long remainingNanos = until - System.nanoTime();
+            remainingNanos > 0;
+            remainingNanos = until - System.nanoTime()) {
+          if (Context.current().isCancelled()) throw Status.CANCELLED.asRuntimeException();
+          try {
+            TimeUnit.NANOSECONDS.sleep(Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(20)));
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw Status.CANCELLED.asRuntimeException();
+          }
         }
       }
       return ads.getAds(request);
     } finally {
-      journal.record(
-          service, "boutique-root-1", budget + 1, HandlerJournal.Boundary.HANDLER_RETURN);
+      if (budget != BoutiqueFaults.ABSENT) {
+        journal.record(
+            service, "boutique-root-1", budget + 1, HandlerJournal.Boundary.HANDLER_RETURN);
+      }
       diagnostics.exit(execution.executionId());
     }
   }

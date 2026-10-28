@@ -29,6 +29,69 @@ import org.junit.jupiter.api.Test;
 
 class BoutiqueAdNodeTest {
   @Test
+  void storeCallsSkipDiagnosticLeafWork() throws Exception {
+    EventSink sink = ignored -> true;
+    HandlerJournal journal = new HandlerJournal(Clock.systemUTC());
+    var plan = RunPlan.create(Scenario.closedRing(), System.currentTimeMillis());
+    try (var node =
+        BoutiqueAdNode.start(
+            "ads-a",
+            "ads-a@test",
+            1,
+            plan.manifest().parameters(),
+            sink,
+            () -> UUID.randomUUID().toString(),
+            new RuntimeDiagnostics(),
+            journal,
+            true,
+            "ads-a",
+            4_000,
+            new Random(42))) {
+      ManagedChannel channel =
+          NettyChannelBuilder.forAddress("127.0.0.1", node.port())
+              .usePlaintext()
+              .disableRetry()
+              .build();
+      try {
+        RootCaller caller =
+            new RootCaller(
+                new InstanceRecorder("driver@test", sink, Clock.systemUTC(), System::nanoTime),
+                () -> UUID.randomUUID().toString());
+        var plain = AdServiceGrpc.newBlockingStub(channel).withDeadlineAfter(1, TimeUnit.SECONDS);
+        assertThat(caller.call("ads-a", plain, client -> client.getAds(kitchen())).getAdsList())
+            .extracting(Demo.Ad::getText)
+            .containsExactly(
+                "Bamboo glass jar for sale. 10% off.",
+                "Mug for sale. Buy two, get third one for free");
+        assertThat(journal.entries()).isEmpty();
+
+        var diagnostic =
+            AdServiceGrpc.newBlockingStub(channel)
+                .withDeadlineAfter(10, TimeUnit.SECONDS)
+                .withInterceptors(
+                    MetadataUtils.newAttachHeadersInterceptor(BoutiqueFaults.headers(0)));
+        assertThat(
+                caller.call("ads-a", diagnostic, client -> client.getAds(kitchen())).getAdsList())
+            .extracting(Demo.Ad::getText)
+            .containsExactly(
+                "Bamboo glass jar for sale. 10% off.",
+                "Mug for sale. Buy two, get third one for free");
+
+        assertThat(journal.entries())
+            .extracting(HandlerJournal.Entry::service, HandlerJournal.Entry::boundary)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("ads-a", HandlerJournal.Boundary.RUN),
+                org.assertj.core.groups.Tuple.tuple(
+                    "ads-a", HandlerJournal.Boundary.HANDLER_RETURN));
+        assertThat(journal.entries().getLast().wallMs() - journal.entries().getFirst().wallMs())
+            .isGreaterThanOrEqualTo(4_000);
+      } finally {
+        channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
   void nativeGetAdsReturnsRealAdsAndRejectsDiagnosticHeadersBeforeAdmission() throws Exception {
     List<ObservationEvent> events = new CopyOnWriteArrayList<>();
     EventSink sink =
