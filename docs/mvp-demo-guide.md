@@ -1,8 +1,45 @@
 # SpanLease MVP demo and integration guide
 
+For selectable live scenarios and an application wiring walkthrough, see
+[`live-application-demo.md`](live-application-demo.md).
+
 Status: production-layer MVP components with deterministic demonstrations. This is not
 G1/G2 acceptance: the real multi-service litmus path and complete race/fault matrix are
 still pending.
+
+## Run the live demo first
+
+The ARM build and real demo were verified on 2026-10-27; see
+[`native-arm-demo-verification.md`](native-arm-demo-verification.md) for evidence.
+The shared grpc-java 1.76.0 compiler/runtime pin supports Apple Silicon directly.
+
+After selecting Java 21 as below:
+
+```sh
+./gradlew :testbed:liveDemo
+```
+
+This runs two finite scenarios over real gRPC and OTLP, with the analyzer in its own
+process. The first closes A→B→C→A with one slot each and should report three blocked
+executions, one queued leaf and three held units. The observation window ends after
+eight seconds and cancels the root independently of the verdict. The second gives A a
+spare slot; its final leaf performs four seconds of finite work, and the root should
+finish successfully with four completed hops. Check negative reports inside that leaf
+interval, not only after everything has finished.
+
+Early negative cuts before the ring closes, and inconclusive cuts while initial
+checkpoints/leases arrive, are expected. Each report concerns its own historical cut.
+The console prints the first detection's observed timing; it is not a latency guarantee.
+
+Artifacts are written to `testbed/build/live-runs/<run-id>/`: `manifest.json`,
+`reports.jsonl` and `handler-journal.json`. They are build outputs and are deleted by
+`clean`. The handler journal is partial truth, and received envelopes are not yet
+archived; these files are not the complete reproduction package.
+
+For demo optimization, the entry point/output is `LiveDemo`, scenario work/windows
+are in `Scenario`, and deployment/analyzer lifecycle is in `LiveRun`. Keep the
+checkpoint, lease, cancellation and persistence guards intact when comparing changes.
+The research task backlog and G1–G3 are separate from having a runnable demo.
 
 ## Prepare Java 21
 
@@ -122,7 +159,8 @@ The intended adapter performs these steps:
 7. Send OTLP batches to a bounded receiver that calls `OtlpEventDecoder`, admits complete
    batches to one analyzer-core thread, and periodically calls `AnalyzerEngine.evaluate`.
 
-The repository already implements the DTOs, gate, lifecycle handle, bounded LogRecord
-sink, OTLP decoder and analyzer core. The remaining integration work is the reusable
-grpc-java stream-tracer/service adapter, scheduled leases/checkpoints, an OTLP collector
-service with bounded atomic batch admission, and the real multi-service G2 litmus suite.
+The repository implements the DTOs, gate, reusable gRPC adapter, scheduled scanner,
+bounded LogRecord sink, OTLP receiver and live analyzer. Remaining acceptance work
+includes independent gate truth/mapping, bare-mode equivalence, production history/
+causal/temporal validation, proof review and the G2 litmus/fault suite. See
+[`stage1-correctness-review.md`](stage1-correctness-review.md) for concrete blockers.

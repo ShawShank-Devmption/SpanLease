@@ -20,13 +20,84 @@ explicitly permits a draft handoff.
   limitations are recorded in `docs/stage0-g0-review.md`.
 - **G0:** approved on 2026-09-22 under D13/D14 for solo schema-v2 implementation.
   Independent review is not claimed; G1–G3 remain pending.
-- **Stage-1 implementation in progress:** B-TYPES and C-TYPES are implemented in
+- **Stage-1 implementation at `f04934e`:** B-TYPES and C-TYPES are implemented in
   `common`; B-GATE has ordered admission/exit, overflow and loss-gap tests; the blocking
   RPC lifecycle API, bounded OTel sink, OTLP decoder and finite-run analyzer core are
   implemented. B-RPC's reusable grpc adapter, scheduled B-SCAN, bounded OTLP receiver,
   independent A runtime/truth path and the complete R1–R16/G1 evidence remain pending.
 
+### Runtime review and continuation — 2026-10-27
+
+- Reviewed `8430515` (2026-10-26): reusable B-RPC adapters, scheduled B-SCAN,
+  bounded OTLP receiver, live analyzer process and instrumented Chain demo now exist.
+  This supersedes the preceding implementation inventory, not the acceptance gates.
+- **C-CUT / C-REDUCE correctness fixes:** known sequence gaps after a fresh checkpoint
+  now block both confirmations and report exact missing ranges. Whole-scope current-block
+  lease eligibility is checked before reduction, including blocked executions outside a
+  positive residual. Thirteen new R4/R5/R7/R12/R13 regression cases pass.
+- **Fresh verification:** 41 analyzer, 5 common and 9 instrumentation tests passed,
+  with no failures/errors/skips. A clean full build stopped at protobuf generation:
+  the pinned macOS-arm gRPC generator is an Intel executable that this host cannot run.
+  Testbed tests and live demos were not executed by that clean invocation.
+- **G1–G3 remain pending.** Independent gate truth/mapping, bare-mode equivalence,
+  complete transport/history validation, production temporal-subset search and proof
+  review remain outstanding. `:testbed:integrationTest` currently has no sources;
+  it is not I-LITMUS/I-CI acceptance evidence. Evaluation tasks still depend on G2.
+- Detailed counterexamples, verification commands and next prerequisites:
+  [`docs/stage1-correctness-review.md`](docs/stage1-correctness-review.md).
+
+### ARM build and demo readiness — 2026-10-27
+
+- Per the project owner's priority, finish native build/demo readiness before the
+  full research backlog. D16 updates the shared grpc-java pin to 1.76.0, including
+  its native ARM64 macOS generator. No Rosetta or local compiler override is required.
+- **Clean build and live demo verified:** all 59 tests passed (41 analyzer, 5 common,
+  9 instrumentation, 4 testbed), with no failures/errors/skips. The real closed ring
+  reported the expected three executions/units and one queued leaf; the spare-capacity
+  root completed four hops with negative reports during its leaf interval.
+- This resolves the native generator failure recorded above. Compatibility with the
+  existing protobuf/OTel pins was checked; G1–G3 and experimental acceptance remain
+  pending. This is demo verification, not independent correctness acceptance.
+- Commands, exact run IDs and limits:
+  [`docs/native-arm-demo-verification.md`](docs/native-arm-demo-verification.md).
+
+### G1 continuation and live application walkthrough — 2026-10-27
+
+- Causal/lifecycle validation, temporal closed-subset pruning at the selected endpoint,
+  and monotonic receipt/evaluation context are implemented with targeted regressions.
+  Production reduction is compared with independent exhaustive closure over 64 small
+  routing histories, including reordered/duplicate fixed-context replay. See D17/D18.
+- The latest full build passed 78 tests (55 analyzer, 5 common, 9 instrumentation,
+  9 testbed), with no failures/errors/skips. All three real Chain scenarios ran: closed
+  wait produced the expected positive evidence; spare capacity and slow progress
+  completed with negative reports during finite leaf work.
+- The live demo now accepts scenario selection and 2/3/5-service configurations.
+  The standalone analyzer launcher was checked to reach READY on an ephemeral port.
+  [`docs/live-application-demo.md`](docs/live-application-demo.md) explains the actual
+  data source, commands, application hook locations and supported boundaries.
+- **G1–G3 remain unaccepted:** independent gate truth and mapping, bare/instrumented
+  equivalence, complete replay/archive and transport/fault acceptance, full historical
+  endpoint search and proof review are still required before integration acceptance,
+  evaluation and clean-environment reproduction. No research task is waived by the
+  live demonstration. The manuscript and full evaluation remain unfinished.
+
 ## 1. Ownership and working rules
+
+### Dev A operator-demo continuation — 2026-10-27
+
+- Per the owner's explicit monitor request, a separate killable workload JVM now
+  exposes its PID plus timestamped JDK process/worker diagnostics. The interactive
+  closed ring has no RPC deadline or eight-second stop; finite CLI runs and controls
+  retain deadlines. See D20 and `docs/live-monitor-design.md`.
+- The main display explicitly names confirmed deadlocks and their workers/slots,
+  shows wait-for dependencies and retains the evidence after application exit. Exit
+  ends the running incident without manufacturing a confirmed negative report.
+- The full build passed with 20 testbed tests, including real gRPC/OTLP process
+  isolation, persistence beyond the former stop window, PID termination, both
+  finite controls, actual thread/slot binding and the completion/new-run race.
+  Browser verification also exercised abrupt SIGKILL exit and retained evidence.
+- This is A-TESTBED/operator-demo usability work, not acceptance of A-TRUTH,
+  I-LITMUS/I-CI, G1–G3, TeaStore integration, pre-deadline experiments or a proof.
 
 | Developer | Primary ownership | Delivers to others |
 |---|---|---|
