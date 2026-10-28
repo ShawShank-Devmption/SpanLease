@@ -189,3 +189,16 @@ page. *Affects:* Dev A monitor/testbed usability and diagnostic regression tests
 no event/manifest/report/replay schema change, no pre-deadline timing claim for the
 manual mode, no native-thread/OS-lock inference and no G1–G3 acceptance. See
 `docs/live-monitor-design.md` for lifecycle, retention and qualification limits.
+
+**D21 | 2026-10-29 | Run the upstream store against a driver-role Boutique edge.**
+The owner selected the full upstream Online Boutique store in Docker, with only its
+Java Ad Service path instrumented by SpanLease. A plain native `GetAds` edge supplies
+driver root metadata because the Go frontend sends no `sl-*` request references;
+incoming Context deadlines/cancellation propagate through the existing RootCaller.
+Store calls never carry the diagnostic header. A separate one-shot diagnostic root
+creates the configured callback cycle, with no deadline in deadlock mode. Absent
+headers skip diagnostic leaf work and journal entries. This supersedes only the
+Ad-Service-only scope of the 2026-10-27 Boutique specification. *Why:* demonstrate
+live upstream traffic while preserving design §4 driver semantics and causal joins.
+*Affects:* testbed Boutique deployment and demo configuration; no schema change,
+G1–G3 acceptance or E-REALISM evidence is implied.
