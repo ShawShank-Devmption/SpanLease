@@ -81,6 +81,16 @@ explicitly permits a draft handoff.
   evaluation and clean-environment reproduction. No research task is waived by the
   live demonstration. The manuscript and full evaluation remain unfinished.
 
+### Historical Jobin stage-0 handoff — preserved 2026-10-29
+
+The merged Jobin history independently records Dev B's A-BOOT verification and
+A-SPEC lifecycle acceptance against `21c8fb4`, plus the 23-case test-only B-FEAS
+probe at `c5ab975`. See `docs/bootstrap-verification.md`, `docs/b-feas-handoff.md`
+and `docs/dev-b-stage0-readiness.md`. Their statements that Dev C review/G0 were
+pending describe that earlier branch snapshot; the later D13/D14 solo review and
+stage-1 inventory above remain the implementation baseline. The imported evidence
+does not establish independent Dev C review or G1–G3 acceptance.
+
 ## 1. Ownership and working rules
 
 ### Dev A operator-demo continuation — 2026-10-27

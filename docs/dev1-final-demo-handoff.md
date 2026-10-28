@@ -94,3 +94,16 @@ sessions within 30 minutes; manifest clock qualification expires at 60 minutes.
 No deferred code-review findings were identified in the author review. Demo run
 artifacts and verification logs are local, gitignored build/scratch evidence; they
 are not a durable reproduction archive or a C-REPLAY deliverable.
+
+## Integration with Jobin history — 2026-10-29
+
+At the owner's request to push to Jobin, merged the existing `origin/Jobin` history
+at `695f560` into the final-demo branch without rewriting either history. Preserved
+its 23 test-only feasibility cases and review records. Resolved documentation
+conflicts by keeping the current D13/D14 and stage-1 baseline while explicitly
+retaining the older consumer-review snapshot; combined the test-only OTel SDK
+dependencies with the analyzer-process runtime configuration.
+
+The combined `./gradlew build` passed in 1m50s: 152 tests, zero failures/errors/skips
+(testbed 82; other module counts unchanged). The original uncommitted
+`build_deck.py` edit is outside these commits.

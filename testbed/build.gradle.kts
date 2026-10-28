@@ -30,6 +30,8 @@ dependencies {
     implementation(libs.grpc.stub)
     implementation(libs.protobuf.java)
     analyzerRuntime(project(":analyzer"))
+    testImplementation(platform(libs.otel.bom))
+    testImplementation(libs.otel.sdk)
 }
 
 protobuf {

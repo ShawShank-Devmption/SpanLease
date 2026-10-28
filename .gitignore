@@ -3,6 +3,7 @@
 .idea/
 *.iml
 .vscode/
+.worktrees/
 
 # Gradle / build
 .gradle/
