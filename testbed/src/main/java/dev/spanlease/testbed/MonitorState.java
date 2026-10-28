@@ -1,11 +1,16 @@
 package dev.spanlease.testbed;
 
+import dev.spanlease.common.EventPayload;
 import dev.spanlease.common.ObservationEnvelope;
 import dev.spanlease.common.RunManifest;
 import dev.spanlease.common.Verdict;
 import dev.spanlease.common.VerdictReport;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Bounded operator view of received facts; never supplies input to the detector or classifies it.
@@ -32,6 +37,14 @@ final class MonitorState {
   private Integer exitCode;
   private RuntimeDiagnostics.Snapshot diagnostics;
   private RuntimeDiagnostics.Snapshot deadlockDiagnostics;
+  private Scenario scenario;
+  private StoreStats store;
+  private Long injectedAtMs;
+  private String faultOutcome = "";
+  private List<StoreStats.AdView> faultAds = List.of();
+  private Long faultCompletedAtMs;
+  private final Map<String, UnitView> unitLatest = new TreeMap<>();
+  private final Map<String, String> unitInstances = new HashMap<>();
 
   MonitorState(int observationLimit) {
     if (observationLimit <= 0)
@@ -45,6 +58,7 @@ final class MonitorState {
     reports.clear();
     progress.clear();
     manifest = plan.manifest();
+    scenario = plan.scenario();
     latest = null;
     firstDeadlock = null;
     error = "";
@@ -59,6 +73,24 @@ final class MonitorState {
     exitCode = null;
     diagnostics = null;
     deadlockDiagnostics = null;
+    store = null;
+    injectedAtMs = null;
+    faultOutcome = "";
+    faultAds = List.of();
+    faultCompletedAtMs = null;
+    unitLatest.clear();
+    unitInstances.clear();
+    manifest
+        .pools()
+        .forEach(
+            pool ->
+                pool.unitIds()
+                    .forEach(
+                        unit -> {
+                          unitInstances.put(unit, pool.instanceId());
+                          unitLatest.put(
+                              unit, new UnitView(unit, pool.instanceId(), "unknown", "", 0));
+                        }));
     startedAtMs = System.currentTimeMillis();
     phase = "RUNNING";
     return true;
@@ -71,6 +103,25 @@ final class MonitorState {
       discarded++;
     }
     observations.addLast(observation);
+    EventPayload payload = observation.event().payload();
+    if (payload instanceof EventPayload.ResourceInit init) {
+      init.unitIds().forEach(unit -> updateUnit(unit, "free", "", observation.event().localSeq()));
+    } else if (payload instanceof EventPayload.ResourceAcquire acquire) {
+      updateUnit(
+          acquire.resourceInstanceId(),
+          "held",
+          acquire.executionId(),
+          observation.event().localSeq());
+    } else if (payload instanceof EventPayload.ResourceRelease release) {
+      updateUnit(release.resourceInstanceId(), "free", "", observation.event().localSeq());
+    }
+  }
+
+  private void updateUnit(String unitId, String state, String executionId, long localSeq) {
+    String instanceId = unitInstances.get(unitId);
+    if (instanceId != null) {
+      unitLatest.put(unitId, new UnitView(unitId, instanceId, state, executionId, localSeq));
+    }
   }
 
   synchronized void report(AnalyzerProcess.TimedReport timed) {
@@ -99,6 +150,23 @@ final class MonitorState {
     outcome = rootOutcome;
     hopsCompleted = hops;
     applicationCompleted = true;
+    notifyAll();
+  }
+
+  synchronized void store(StoreStats sample) {
+    store = sample;
+    notifyAll();
+  }
+
+  synchronized void injected(long atMs) {
+    injectedAtMs = atMs;
+    notifyAll();
+  }
+
+  synchronized void faultCompleted(String rootOutcome, List<StoreStats.AdView> ads) {
+    faultOutcome = rootOutcome;
+    faultAds = List.copyOf(ads);
+    faultCompletedAtMs = System.currentTimeMillis();
     notifyAll();
   }
 
@@ -133,10 +201,14 @@ final class MonitorState {
   }
 
   synchronized Snapshot snapshot() {
+    Scenario.Application application =
+        scenario == null ? Scenario.Application.CHAIN : scenario.application();
     return new Snapshot(
         phase,
         error,
-        "Live Chain · real local gRPC / OTLP · controlled workload",
+        application == Scenario.Application.CHAIN
+            ? "Live Chain · real local gRPC / OTLP · controlled workload"
+            : "Online Boutique · live store traffic → SpanLease-instrumented Ad Service",
         manifest,
         List.copyOf(observations),
         List.copyOf(reports),
@@ -153,7 +225,19 @@ final class MonitorState {
         applicationAlive,
         exitCode,
         diagnostics,
-        deadlockDiagnostics);
+        deadlockDiagnostics,
+        application.name(),
+        application == Scenario.Application.CHAIN
+            ? "spanlease.testbed.Chain/Call"
+            : "hipstershop.AdService/GetAds",
+        scenario != null && scenario.manualStop(),
+        scenario != null && scenario.injectable() && applicationAlive && injectedAtMs == null,
+        injectedAtMs,
+        faultOutcome,
+        faultAds,
+        faultCompletedAtMs,
+        store,
+        new ArrayList<>(unitLatest.values()));
   }
 
   record Snapshot(
@@ -176,5 +260,18 @@ final class MonitorState {
       boolean applicationAlive,
       Integer exitCode,
       RuntimeDiagnostics.Snapshot diagnostics,
-      RuntimeDiagnostics.Snapshot deadlockDiagnostics) {}
+      RuntimeDiagnostics.Snapshot deadlockDiagnostics,
+      String application,
+      String nativeMethod,
+      boolean manualStop,
+      boolean injectable,
+      Long injectedAtMs,
+      String faultOutcome,
+      List<StoreStats.AdView> faultAds,
+      Long faultCompletedAtMs,
+      StoreStats store,
+      List<UnitView> unitLatest) {}
+
+  record UnitView(
+      String unitId, String instanceId, String state, String executionId, long localSeq) {}
 }

@@ -17,6 +17,7 @@ import java.util.TreeMap;
 public record Scenario(
     String name,
     String description,
+    Application application,
     Map<String, Integer> capacities,
     List<Hop> rootHops,
     Duration rootDeadline,
@@ -26,6 +27,7 @@ public record Scenario(
   public Scenario {
     Objects.requireNonNull(name, "name");
     Objects.requireNonNull(description, "description");
+    Objects.requireNonNull(application, "application");
     Map<String, Integer> services = Collections.unmodifiableMap(new TreeMap<>(capacities));
     if (services.values().stream().anyMatch(capacity -> capacity == null || capacity <= 0)) {
       throw new IllegalArgumentException("every service needs a positive slot capacity");
@@ -71,6 +73,75 @@ public record Scenario(
     return chain("slow-progress", services, false, false);
   }
 
+  public static Scenario boutiqueLive() {
+    return boutique(
+        "boutique-live",
+        "live store traffic through SpanLease-instrumented Ad Service",
+        false,
+        false);
+  }
+
+  public static Scenario boutiqueDeadlock() {
+    return boutique(
+        "boutique-deadlock",
+        "live store traffic; injected cycle ads-a→ads-b→ads-c→ads-a, one slot each",
+        false,
+        true);
+  }
+
+  public static Scenario boutiqueSpareCapacity() {
+    return boutique(
+        "boutique-spare-capacity",
+        "live store traffic; injected cycle with a spare ads-a slot",
+        true,
+        true);
+  }
+
+  public static Scenario named(String name) {
+    return switch (name) {
+      case "closed-ring" -> closedRing();
+      case "spare-capacity" -> spareCapacity();
+      case "slow-progress" -> slowProgress(3);
+      case "boutique-live" -> boutiqueLive();
+      case "boutique-deadlock" -> boutiqueDeadlock();
+      case "boutique-spare-capacity" -> boutiqueSpareCapacity();
+      default -> throw new IllegalArgumentException("unknown scenario: " + name);
+    };
+  }
+
+  public boolean manualStop() {
+    return name.equals("closed-ring") || application == Application.BOUTIQUE;
+  }
+
+  public boolean injectable() {
+    return name.equals("boutique-deadlock") || name.equals("boutique-spare-capacity");
+  }
+
+  public boolean rootWithoutDeadline() {
+    return name.equals("closed-ring") || name.equals("boutique-deadlock");
+  }
+
+  private static Scenario boutique(
+      String name, String description, boolean spareCapacity, boolean cycle) {
+    Map<String, Integer> capacities =
+        Map.of("ads-a", spareCapacity ? 2 : 1, "ads-b", 1, "ads-c", 1);
+    List<Hop> hops = new ArrayList<>();
+    hops.add(hop("ads-a", 0));
+    if (cycle) {
+      hops.add(hop("ads-b", 0));
+      hops.add(hop("ads-c", 0));
+      hops.add(hop("ads-a", spareCapacity ? 4_000 : 0));
+    }
+    return new Scenario(
+        name,
+        description,
+        Application.BOUTIQUE,
+        capacities,
+        hops,
+        DEFAULT_ROOT_DEADLINE,
+        Duration.ofSeconds(8));
+  }
+
   private static Scenario chain(String name, int services, boolean returnToFirst, boolean spare) {
     if (services != 2 && services != 3 && services != 5) {
       throw new IllegalArgumentException("demo service count must be 2, 3 or 5");
@@ -92,6 +163,7 @@ public record Scenario(
     return new Scenario(
         services == 3 ? name : name + "-" + services,
         description,
+        Application.CHAIN,
         capacities,
         hops,
         DEFAULT_ROOT_DEADLINE,
@@ -100,5 +172,10 @@ public record Scenario(
 
   private static Hop hop(String service, int workMs) {
     return Hop.newBuilder().setTargetService(service).setWorkMs(workMs).build();
+  }
+
+  public enum Application {
+    CHAIN,
+    BOUTIQUE
   }
 }

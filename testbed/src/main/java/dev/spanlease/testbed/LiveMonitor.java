@@ -115,14 +115,10 @@ public final class LiveMonitor implements AutoCloseable {
         query != null && query.startsWith("scenario=") && !query.contains("&")
             ? URLDecoder.decode(query.substring("scenario=".length()), StandardCharsets.UTF_8)
             : "";
-    Scenario scenario =
-        switch (selected) {
-          case "closed-ring" -> Scenario.closedRing();
-          case "spare-capacity" -> Scenario.spareCapacity();
-          case "slow-progress" -> Scenario.slowProgress(3);
-          default -> null;
-        };
-    if (scenario == null) {
+    Scenario scenario;
+    try {
+      scenario = Scenario.named(selected);
+    } catch (IllegalArgumentException unknown) {
       respond(exchange, 400, "text/plain", "unknown scenario");
       return;
     }

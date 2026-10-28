@@ -83,12 +83,88 @@ class MonitorStateTest {
     assertThat(state.begin(plan)).isTrue();
   }
 
+  @Test
+  void boutiqueSnapshotExposesStoreAndInjectState() {
+    MonitorState state = new MonitorState(20);
+    state.begin(RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis()));
+    assertThat(state.snapshot().application()).isEqualTo("BOUTIQUE");
+    assertThat(state.snapshot().injectable()).isFalse();
+
+    state.applicationStarted(1);
+    assertThat(state.snapshot().injectable()).isTrue();
+    state.injected(5);
+    assertThat(state.snapshot().injectable()).isFalse();
+    assertThat(state.snapshot().injectedAtMs()).isEqualTo(5);
+
+    StoreStats stats = new StoreStats("http://localhost:8080", 9555, 1, 1, 0, 0, List.of(), 6);
+    state.store(stats);
+    assertThat(state.snapshot().store()).isEqualTo(stats);
+  }
+
+  @Test
+  void chainRunAfterBoutiqueClearsBoutiqueState() {
+    MonitorState state = new MonitorState(20);
+    state.begin(RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis()));
+    state.applicationStarted(1);
+    state.store(new StoreStats("http://localhost:8080", 9555, 1, 1, 0, 0, List.of(), 6));
+    state.injected(5);
+    state.faultCompleted("OK", List.of(new StoreStats.AdView("/product/ABCDEFGHIJ", "ad")));
+    state.applicationExited(0);
+
+    state.begin(RunPlan.create(Scenario.closedRing(), System.currentTimeMillis()));
+    assertThat(state.snapshot().store()).isNull();
+    assertThat(state.snapshot().injectedAtMs()).isNull();
+    assertThat(state.snapshot().faultAds()).isEmpty();
+    assertThat(state.snapshot().application()).isEqualTo("CHAIN");
+  }
+
+  @Test
+  void injectableIsFalseForLiveAndAfterExit() {
+    MonitorState state = new MonitorState(20);
+    state.begin(RunPlan.create(Scenario.boutiqueLive(), System.currentTimeMillis()));
+    state.applicationStarted(1);
+    assertThat(state.snapshot().injectable()).isFalse();
+    state.applicationExited(0);
+
+    state.begin(RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis()));
+    state.applicationStarted(2);
+    assertThat(state.snapshot().injectable()).isTrue();
+    state.applicationExited(143);
+    assertThat(state.snapshot().injectable()).isFalse();
+  }
+
+  @Test
+  void unitLatestSurvivesDisplayTruncation() {
+    MonitorState state = new MonitorState(2);
+    RunPlan boutique = RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis());
+    state.begin(boutique);
+    String instance = boutique.instanceByService().get("ads-a");
+    String unit = instance + ":app:slot-0";
+    state.observe(event(instance, 1, new EventPayload.ResourceInit("app", 1, List.of(unit))));
+    state.observe(event(instance, 2, new EventPayload.ResourceAcquire("exec-1", unit, "inv-1")));
+    for (long seq = 3; seq < 13; seq++) {
+      state.observe(event(instance, seq, new EventPayload.InstanceCheckpoint(seq - 1, 0)));
+    }
+
+    assertThat(state.snapshot().observations()).hasSize(2);
+    assertThat(state.snapshot().unitLatest())
+        .contains(new MonitorState.UnitView(unit, instance, "held", "exec-1", 2));
+
+    state.fail("switch run");
+    RunPlan chain = RunPlan.create(Scenario.closedRing(), System.currentTimeMillis());
+    state.begin(chain);
+    assertThat(state.snapshot().unitLatest())
+        .hasSize(chain.manifest().pools().stream().mapToInt(pool -> pool.unitIds().size()).sum())
+        .allSatisfy(unitView -> assertThat(unitView.state()).isEqualTo("unknown"));
+  }
+
   private static ObservationEnvelope event(long seq) {
+    return event("A", seq, new EventPayload.InstanceCheckpoint(seq - 1, 0));
+  }
+
+  private static ObservationEnvelope event(String instance, long seq, EventPayload payload) {
     return new ObservationEnvelope(
-        new ObservationEvent(
-            2, "A", seq, "", 100, 100, "", "", new EventPayload.InstanceCheckpoint(seq - 1, 0)),
-        100,
-        100);
+        new ObservationEvent(2, instance, seq, "", 100, 100, "", "", payload), 100, 100);
   }
 
   private static VerdictReport report(Verdict verdict) {

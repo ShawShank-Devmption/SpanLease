@@ -16,13 +16,7 @@ public final class MonitorApplication {
   public static void main(String[] args) throws Exception {
     var json = ContractJson.mapper();
     RunManifest manifest = json.readValue(Path.of(args[0]).toFile(), RunManifest.class);
-    Scenario scenario =
-        switch (args[1]) {
-          case "closed-ring" -> Scenario.closedRing();
-          case "spare-capacity" -> Scenario.spareCapacity();
-          case "slow-progress" -> Scenario.slowProgress(3);
-          default -> throw new IllegalArgumentException("unknown monitor scenario");
-        };
+    Scenario scenario = Scenario.named(args[1]);
     Map<String, String> instances =
         manifest.instances().stream()
             .filter(instance -> !instance.serviceBinding().equals("driver"))
@@ -52,7 +46,7 @@ public final class MonitorApplication {
           0,
           500,
           TimeUnit.MILLISECONDS);
-      boolean manual = scenario.name().equals("closed-ring");
+      boolean manual = scenario.rootWithoutDeadline();
       ChainDriver.RootCall root =
           manual
               ? deployment.driver().submitUntilStopped("root-1", scenario.rootHops())
