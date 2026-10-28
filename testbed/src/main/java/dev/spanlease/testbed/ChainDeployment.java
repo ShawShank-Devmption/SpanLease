@@ -32,6 +32,15 @@ public final class ChainDeployment implements AutoCloseable {
   public static ChainDeployment start(
       RunPlan plan, String otlpEndpoint, Function<String, Supplier<String>> invocationIds)
       throws IOException, InterruptedException {
+    return start(plan, otlpEndpoint, invocationIds, null);
+  }
+
+  static ChainDeployment start(
+      RunPlan plan,
+      String otlpEndpoint,
+      Function<String, Supplier<String>> invocationIds,
+      RuntimeDiagnostics diagnostics)
+      throws IOException, InterruptedException {
     ChainDeployment deployment = new ChainDeployment();
     try {
       Map<String, Integer> ports = new LinkedHashMap<>();
@@ -46,7 +55,8 @@ public final class ChainDeployment implements AutoCloseable {
                 plan.manifest().parameters(),
                 pipeline.sink(),
                 invocationIds.apply(service),
-                deployment.journal);
+                deployment.journal,
+                diagnostics);
         deployment.nodes.put(service, node);
         ports.put(service, node.port());
       }

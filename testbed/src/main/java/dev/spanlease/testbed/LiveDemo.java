@@ -3,7 +3,6 @@ package dev.spanlease.testbed;
 import dev.spanlease.common.Verdict;
 import dev.spanlease.common.VerdictReport;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -22,9 +21,10 @@ public final class LiveDemo {
   private LiveDemo() {}
 
   public static void main(String[] args) throws Exception {
-    Path runs = Path.of(args.length > 0 ? args[0] : "live-runs");
+    DemoOptions options = DemoOptions.parse(args);
+    Path runs = options.runsDirectory();
     System.out.println("SpanLease live demo — gRPC services → OTLP → analyzer process");
-    for (Scenario scenario : List.of(Scenario.closedRing(), Scenario.spareCapacity())) {
+    for (Scenario scenario : options.scenarios()) {
       RunPlan plan = RunPlan.create(scenario, System.currentTimeMillis());
       Timeline timeline = new Timeline(plan);
       System.out.println();
@@ -131,9 +131,8 @@ public final class LiveDemo {
                     .ifPresent(
                         leaf ->
                             System.out.printf(
-                                "     %d CONFIRMED_NO_DEADLOCK verdicts certified cuts inside the"
-                                    + " %.2fs the final hop ran on the spare slot while its three"
-                                    + " ancestors were blocked%n",
+                                "     %d CONFIRMED_NO_DEADLOCK verdicts certified cuts during the"
+                                    + " final hop's %.2fs finite-work interval%n",
                                 result.certifiedWithin(Verdict.CONFIRMED_NO_DEADLOCK, leaf).size(),
                                 (leaf.toMs() - leaf.fromMs()) / 1000.0));
               });

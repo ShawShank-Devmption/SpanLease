@@ -80,28 +80,44 @@ public final class ChainDriver implements AutoCloseable {
 
   /** Sends one root request asynchronously with an absolute deadline. */
   public RootCall submit(String requestId, List<Hop> hops, Duration deadline) {
+    return submit(requestId, hops, java.util.Optional.of(deadline));
+  }
+
+  /** Interactive diagnostic run only: no RPC deadline; the operator stops the workload JVM. */
+  RootCall submitUntilStopped(String requestId, List<Hop> hops) {
+    return submit(requestId, hops, java.util.Optional.empty());
+  }
+
+  private RootCall submit(String requestId, List<Hop> hops, java.util.Optional<Duration> deadline) {
     String target = hops.get(0).getTargetService();
     ManagedChannel channel = Objects.requireNonNull(channels.get(target), "unbound " + target);
     CallRequest request =
         CallRequest.newBuilder().setRequestId(requestId).addAllRemaining(hops).build();
     long sentAtMs = clock.millis();
-    Deadline rootDeadline = Deadline.after(deadline.toMillis(), TimeUnit.MILLISECONDS);
+    Deadline rootDeadline =
+        deadline.map(value -> Deadline.after(value.toMillis(), TimeUnit.MILLISECONDS)).orElse(null);
     Context.CancellableContext context = Context.current().withCancellation();
     CompletableFuture<CallReply> reply =
         CompletableFuture.supplyAsync(
             () -> {
               Context previous = context.attach();
               try {
+                var stub = ChainGrpc.newBlockingStub(channel);
                 return rootCaller.call(
                     target,
-                    ChainGrpc.newBlockingStub(channel).withDeadline(rootDeadline),
-                    stub -> stub.call(request));
+                    rootDeadline == null ? stub : stub.withDeadline(rootDeadline),
+                    client -> client.call(request));
               } finally {
                 context.detach(previous);
               }
             },
             rootThreads);
-    return new RootCall(requestId, sentAtMs, sentAtMs + deadline.toMillis(), reply, context);
+    return new RootCall(
+        requestId,
+        sentAtMs,
+        deadline.map(value -> sentAtMs + value.toMillis()).orElse(null),
+        reply,
+        context);
   }
 
   @Override
@@ -115,11 +131,11 @@ public final class ChainDriver implements AutoCloseable {
     scanner.close();
   }
 
-  /** One in-flight root request. */
+  /** One in-flight root request. A null deadline is exclusive to the interactive monitor run. */
   public record RootCall(
       String requestId,
       long sentAtMs,
-      long deadlineAtMs,
+      Long deadlineAtMs,
       CompletableFuture<CallReply> reply,
       Context.CancellableContext context) {
     /** Requests cancellation; the cascade reaches every descendant through gRPC Context. */

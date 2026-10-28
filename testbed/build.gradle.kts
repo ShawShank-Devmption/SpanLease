@@ -50,6 +50,11 @@ val analyzerClasspath = CommandLineArgumentProvider {
     listOf("-Dspanlease.analyzer.classpath=${analyzerRuntime.asPath}")
 }
 
+tasks.test {
+    inputs.files(analyzerRuntime)
+    jvmArgumentProviders.add(analyzerClasspath)
+}
+
 tasks.register<Test>("integrationTest") {
     group = "verification"
     description = "Real gRPC → OTLP → analyzer-process litmus tests (I-LITMUS)."
@@ -65,6 +70,17 @@ tasks.register<JavaExec>("liveDemo") {
     description = "Run the closed-ring and spare-capacity scenarios over real gRPC with live analysis."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("dev.spanlease.testbed.LiveDemo")
+    inputs.files(analyzerRuntime)
+    jvmArgumentProviders.add(analyzerClasspath)
+    workingDir = layout.buildDirectory.get().asFile
+    doFirst { workingDir.mkdirs() }
+}
+
+tasks.register<JavaExec>("monitorDemo") {
+    group = "application"
+    description = "Open a local HTTP monitor for live gRPC calls and analyzer evidence."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("dev.spanlease.testbed.LiveMonitor")
     inputs.files(analyzerRuntime)
     jvmArgumentProviders.add(analyzerClasspath)
     workingDir = layout.buildDirectory.get().asFile

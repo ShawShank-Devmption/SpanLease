@@ -57,6 +57,7 @@ public final class ChainNode implements AutoCloseable {
   private final SpanLeaseServer spanLease;
   private final SpanLeaseClient client;
   private final HandlerJournal journal;
+  private final RuntimeDiagnostics diagnostics;
   private final ExecutorService callbacks;
   private final Server server;
   private final Map<String, ManagedChannel> peers = new ConcurrentHashMap<>();
@@ -68,10 +69,12 @@ public final class ChainNode implements AutoCloseable {
       RunManifest.Parameters parameters,
       EventSink sink,
       Supplier<String> invocationIds,
-      HandlerJournal journal)
+      HandlerJournal journal,
+      RuntimeDiagnostics diagnostics)
       throws IOException {
     this.serviceName = Objects.requireNonNull(serviceName, "serviceName");
     this.journal = Objects.requireNonNull(journal, "journal");
+    this.diagnostics = diagnostics;
     this.recorder = new InstanceRecorder(instanceId, sink, Clock.systemUTC(), System::nanoTime);
     this.gate =
         new SlotTrackingExecutor(
@@ -112,7 +115,21 @@ public final class ChainNode implements AutoCloseable {
       HandlerJournal journal)
       throws IOException {
     return new ChainNode(
-        serviceName, instanceId, capacity, parameters, sink, invocationIds, journal);
+        serviceName, instanceId, capacity, parameters, sink, invocationIds, journal, null);
+  }
+
+  static ChainNode start(
+      String serviceName,
+      String instanceId,
+      int capacity,
+      RunManifest.Parameters parameters,
+      EventSink sink,
+      Supplier<String> invocationIds,
+      HandlerJournal journal,
+      RuntimeDiagnostics diagnostics)
+      throws IOException {
+    return new ChainNode(
+        serviceName, instanceId, capacity, parameters, sink, invocationIds, journal, diagnostics);
   }
 
   public String serviceName() {
@@ -158,6 +175,7 @@ public final class ChainNode implements AutoCloseable {
 
   private CallReply handle(SlotTrackingExecutor.ExecutionContext execution, CallRequest request) {
     int remaining = request.getRemainingCount();
+    if (diagnostics != null) diagnostics.enter(serviceName, execution);
     journal.record(serviceName, request.getRequestId(), remaining, HandlerJournal.Boundary.RUN);
     try {
       Hop hop = request.getRemaining(0);
@@ -195,6 +213,7 @@ public final class ChainNode implements AutoCloseable {
           .setHopsCompleted(hopsCompleted)
           .build();
     } finally {
+      if (diagnostics != null) diagnostics.exit(execution.executionId());
       journal.record(
           serviceName, request.getRequestId(), remaining, HandlerJournal.Boundary.HANDLER_RETURN);
     }

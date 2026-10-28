@@ -1,6 +1,7 @@
 package dev.spanlease.testbed;
 
 import dev.spanlease.common.ContractJson;
+import dev.spanlease.common.ObservationEnvelope;
 import dev.spanlease.common.VerdictReport;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -34,11 +35,14 @@ public final class AnalyzerProcess implements AutoCloseable {
   private final CompletableFuture<Integer> ready = new CompletableFuture<>();
   private final List<TimedReport> reports = new CopyOnWriteArrayList<>();
   private final Consumer<TimedReport> listener;
+  private final Consumer<ObservationEnvelope> observations;
   private final Thread reader;
 
-  private AnalyzerProcess(Process process, Consumer<TimedReport> listener) {
+  private AnalyzerProcess(
+      Process process, Consumer<TimedReport> listener, Consumer<ObservationEnvelope> observations) {
     this.process = process;
     this.listener = listener;
+    this.observations = observations;
     this.reader = new Thread(this::readOutput, "analyzer-output");
     reader.setDaemon(true);
     reader.start();
@@ -46,6 +50,21 @@ public final class AnalyzerProcess implements AutoCloseable {
 
   /** Launches the analyzer on a free loopback port, emitting a report per evaluation. */
   public static AnalyzerProcess start(Path manifestFile, Consumer<TimedReport> listener)
+      throws IOException {
+    return launch(manifestFile, listener, ignored -> {}, false);
+  }
+
+  public static AnalyzerProcess start(
+      Path manifestFile, Consumer<TimedReport> listener, Consumer<ObservationEnvelope> observations)
+      throws IOException {
+    return launch(manifestFile, listener, Objects.requireNonNull(observations), true);
+  }
+
+  private static AnalyzerProcess launch(
+      Path manifestFile,
+      Consumer<TimedReport> listener,
+      Consumer<ObservationEnvelope> observations,
+      boolean showObservations)
       throws IOException {
     String classpath = System.getProperty(CLASSPATH_PROPERTY);
     if (classpath == null || classpath.isBlank()) {
@@ -63,10 +82,12 @@ public final class AnalyzerProcess implements AutoCloseable {
                 "--port",
                 "0",
                 "--emit",
-                "all")
+                "all",
+                "--observations",
+                showObservations ? "on" : "off")
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start();
-    return new AnalyzerProcess(process, Objects.requireNonNull(listener, "listener"));
+    return new AnalyzerProcess(process, Objects.requireNonNull(listener, "listener"), observations);
   }
 
   /** Waits until the analyzer's OTLP receiver is listening and returns its port. */
@@ -103,6 +124,10 @@ public final class AnalyzerProcess implements AutoCloseable {
       for (String line = output.readLine(); line != null; line = output.readLine()) {
         if (line.startsWith("READY port=")) {
           ready.complete(Integer.parseInt(line.substring("READY port=".length())));
+        } else if (line.startsWith("OBSERVATION ")) {
+          observations.accept(
+              ContractJson.mapper()
+                  .readValue(line.substring("OBSERVATION ".length()), ObservationEnvelope.class));
         } else if (line.startsWith("REPORT ")) {
           TimedReport report =
               new TimedReport(

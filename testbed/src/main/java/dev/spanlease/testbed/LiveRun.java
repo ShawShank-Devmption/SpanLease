@@ -2,6 +2,7 @@ package dev.spanlease.testbed;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spanlease.common.ContractJson;
+import dev.spanlease.common.ObservationEnvelope;
 import dev.spanlease.common.Verdict;
 import dev.spanlease.testbed.proto.CallReply;
 import dev.spanlease.testbed.proto.Hop;
@@ -46,13 +47,28 @@ public final class LiveRun {
       Consumer<String> progress,
       Consumer<AnalyzerProcess.TimedReport> reports)
       throws Exception {
+    return execute(plan, runsDirectory, invocationIds, progress, reports, null);
+  }
+
+  /** Optional operator-only received-envelope listener; never changes detector inputs. */
+  public static Result execute(
+      RunPlan plan,
+      Path runsDirectory,
+      Function<String, Supplier<String>> invocationIds,
+      Consumer<String> progress,
+      Consumer<AnalyzerProcess.TimedReport> reports,
+      Consumer<ObservationEnvelope> observations)
+      throws Exception {
     Scenario scenario = plan.scenario();
     ObjectMapper json = ContractJson.mapper();
     Path directory = Files.createDirectories(runsDirectory.resolve(plan.manifest().runId()));
     Path manifestFile = directory.resolve("manifest.json");
     json.writerWithDefaultPrettyPrinter().writeValue(manifestFile.toFile(), plan.manifest());
 
-    try (AnalyzerProcess analyzer = AnalyzerProcess.start(manifestFile, reports)) {
+    try (AnalyzerProcess analyzer =
+        observations == null
+            ? AnalyzerProcess.start(manifestFile, reports)
+            : AnalyzerProcess.start(manifestFile, reports, observations)) {
       int port = analyzer.awaitReady(ANALYZER_START);
       progress.accept("analyzer process listening for OTLP on 127.0.0.1:" + port);
       ChainDriver.RootCall root;

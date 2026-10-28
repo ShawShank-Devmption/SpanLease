@@ -2,6 +2,7 @@ package dev.spanlease.testbed;
 
 import dev.spanlease.testbed.proto.Hop;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -46,13 +47,11 @@ public record Scenario(
    * their slots and block on the next hop; the final A attempt queues behind A's own caller.
    */
   public static Scenario closedRing() {
-    return new Scenario(
-        "closed-ring",
-        "svcA→svcB→svcC→svcA with one slot each: the last hop queues behind its own ancestor",
-        Map.of("svcA", 1, "svcB", 1, "svcC", 1),
-        List.of(hop("svcA", 0), hop("svcB", 0), hop("svcC", 0), hop("svcA", 0)),
-        DEFAULT_ROOT_DEADLINE,
-        Duration.ofSeconds(8));
+    return closedRing(3);
+  }
+
+  public static Scenario closedRing(int services) {
+    return chain("closed-ring", services, true, false);
   }
 
   /**
@@ -60,11 +59,41 @@ public record Scenario(
    * finite work while its three ancestors are blocked, then the whole chain completes.
    */
   public static Scenario spareCapacity() {
+    return spareCapacity(3);
+  }
+
+  public static Scenario spareCapacity(int services) {
+    return chain("spare-capacity", services, true, true);
+  }
+
+  /** Finite work at a nonblocked leaf provides observed progress while ancestors retain slots. */
+  public static Scenario slowProgress(int services) {
+    return chain("slow-progress", services, false, false);
+  }
+
+  private static Scenario chain(String name, int services, boolean returnToFirst, boolean spare) {
+    if (services != 2 && services != 3 && services != 5) {
+      throw new IllegalArgumentException("demo service count must be 2, 3 or 5");
+    }
+    Map<String, Integer> capacities = new TreeMap<>();
+    List<Hop> hops = new ArrayList<>();
+    for (int index = 0; index < services; index++) {
+      String service = "svc" + (char) ('A' + index);
+      capacities.put(service, index == 0 && spare ? 2 : 1);
+      hops.add(hop(service, !returnToFirst && index == services - 1 ? 4_000 : 0));
+    }
+    if (returnToFirst) hops.add(hop("svcA", spare ? 4_000 : 0));
+    String description =
+        returnToFirst
+            ? spare
+                ? "cyclic route with a spare svcA slot: the final leaf can run"
+                : "closed ring with one slot per service: the final leaf queues at svcA"
+            : "finite slow leaf with no return call: blocked ancestors have a progressing counterpart";
     return new Scenario(
-        "spare-capacity",
-        "svcA→svcB→svcC→svcA where svcA has 2 slots: the last hop runs on the spare slot",
-        Map.of("svcA", 2, "svcB", 1, "svcC", 1),
-        List.of(hop("svcA", 0), hop("svcB", 0), hop("svcC", 0), hop("svcA", 4_000)),
+        services == 3 ? name : name + "-" + services,
+        description,
+        capacities,
+        hops,
         DEFAULT_ROOT_DEADLINE,
         Duration.ofSeconds(8));
   }
