@@ -45,7 +45,9 @@ public final class LiveAnalyzer implements AutoCloseable {
   private final long evaluationIntervalMs;
   private final boolean emitEveryEvaluation;
   private final Consumer<VerdictReport> reports;
+  private final Consumer<ObservationEnvelope> observations;
   private final Clock wallClock;
+  private final LongSupplier monotonicClock;
   private final Server server;
   private final Thread core;
   private volatile boolean running = true;
@@ -56,6 +58,7 @@ public final class LiveAnalyzer implements AutoCloseable {
       int port,
       boolean emitEveryEvaluation,
       Consumer<VerdictReport> reports,
+      Consumer<ObservationEnvelope> observations,
       Clock wallClock,
       LongSupplier monotonicClock)
       throws IOException {
@@ -63,7 +66,9 @@ public final class LiveAnalyzer implements AutoCloseable {
     this.evaluationIntervalMs = manifest.parameters().evaluationIntervalMs();
     this.emitEveryEvaluation = emitEveryEvaluation;
     this.reports = Objects.requireNonNull(reports, "reports");
+    this.observations = Objects.requireNonNull(observations, "observations");
     this.wallClock = Objects.requireNonNull(wallClock, "wallClock");
+    this.monotonicClock = Objects.requireNonNull(monotonicClock, "monotonicClock");
     OtlpLogReceiver receiver =
         new OtlpLogReceiver(
             Set.copyOf(
@@ -95,7 +100,23 @@ public final class LiveAnalyzer implements AutoCloseable {
       LongSupplier monotonicClock)
       throws IOException {
     return new LiveAnalyzer(
-        manifest, port, emitEveryEvaluation, reports, wallClock, monotonicClock);
+        manifest, port, emitEveryEvaluation, reports, ignored -> {}, wallClock, monotonicClock);
+  }
+
+  /**
+   * Optional received-envelope view, invoked on the core thread after ingestion, never an input.
+   */
+  public static LiveAnalyzer start(
+      RunManifest manifest,
+      int port,
+      boolean emitEveryEvaluation,
+      Consumer<VerdictReport> reports,
+      Consumer<ObservationEnvelope> observations,
+      Clock wallClock,
+      LongSupplier monotonicClock)
+      throws IOException {
+    return new LiveAnalyzer(
+        manifest, port, emitEveryEvaluation, reports, observations, wallClock, monotonicClock);
   }
 
   public int port() {
@@ -111,35 +132,45 @@ public final class LiveAnalyzer implements AutoCloseable {
   }
 
   private void runCore() {
-    long nextEvaluation = wallClock.millis() + evaluationIntervalMs;
+    long intervalNs = TimeUnit.MILLISECONDS.toNanos(evaluationIntervalMs);
+    long nextEvaluation = monotonicClock.getAsLong() + intervalNs;
     ReportSignature last = null;
     try {
       while (running) {
-        long waitMs = nextEvaluation - wallClock.millis();
-        if (waitMs > 0) {
-          List<ObservationEnvelope> batch = ingress.poll(waitMs);
+        long waitNs = nextEvaluation - monotonicClock.getAsLong();
+        if (waitNs > 0) {
+          List<ObservationEnvelope> batch =
+              ingress.poll(Math.max(1, TimeUnit.NANOSECONDS.toMillis(waitNs)));
           if (batch != null) {
-            batch.forEach(engine::ingest);
+            ingest(batch);
           }
           continue;
         }
-        ingress.drain().forEach(batch -> batch.forEach(engine::ingest));
+        ingress.drain().forEach(this::ingest);
         long evaluatedAt = wallClock.millis();
-        VerdictReport report = engine.evaluate(evaluatedAt);
+        long evaluatedMonotonicNs = monotonicClock.getAsLong();
+        VerdictReport report = engine.evaluate(evaluatedAt, evaluatedMonotonicNs);
         ReportSignature signature = ReportSignature.of(report);
         if (emitEveryEvaluation || !signature.equals(last)) {
           last = signature;
           reports.accept(report);
         }
-        nextEvaluation += evaluationIntervalMs;
-        if (nextEvaluation <= evaluatedAt) {
-          nextEvaluation = evaluatedAt + evaluationIntervalMs;
+        nextEvaluation += intervalNs;
+        if (nextEvaluation <= evaluatedMonotonicNs) {
+          nextEvaluation = evaluatedMonotonicNs + intervalNs;
         }
       }
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();
     } catch (RuntimeException unexpected) {
       failure = unexpected;
+    }
+  }
+
+  private void ingest(List<ObservationEnvelope> batch) {
+    for (ObservationEnvelope envelope : batch) {
+      engine.ingest(envelope);
+      observations.accept(envelope);
     }
   }
 
@@ -158,6 +189,7 @@ public final class LiveAnalyzer implements AutoCloseable {
     Path manifestPath = null;
     int port = 4317;
     boolean emitAll = false;
+    boolean emitObservations = false;
     for (int index = 0; index < args.length; index += 2) {
       if (index + 1 >= args.length) {
         throw new IllegalArgumentException("missing value for " + args[index]);
@@ -166,6 +198,13 @@ public final class LiveAnalyzer implements AutoCloseable {
         case "--manifest" -> manifestPath = Path.of(args[index + 1]);
         case "--port" -> port = Integer.parseInt(args[index + 1]);
         case "--emit" -> emitAll = parseEmit(args[index + 1]);
+        case "--observations" ->
+            emitObservations =
+                switch (args[index + 1]) {
+                  case "on" -> true;
+                  case "off" -> false;
+                  default -> throw new IllegalArgumentException("--observations must be on or off");
+                };
         default -> throw new IllegalArgumentException("unknown option " + args[index]);
       }
     }
@@ -175,12 +214,16 @@ public final class LiveAnalyzer implements AutoCloseable {
     }
     ObjectMapper json = ContractJson.mapper();
     RunManifest manifest = json.readValue(manifestPath.toFile(), RunManifest.class);
+    boolean showObservations = emitObservations;
     LiveAnalyzer analyzer =
         start(
             manifest,
             port,
             emitAll,
             report -> emit("REPORT " + encode(json, report)),
+            envelope -> {
+              if (showObservations) emit("OBSERVATION " + encodeEnvelope(json, envelope));
+            },
             Clock.systemUTC(),
             System::nanoTime);
     Runtime.getRuntime()
@@ -208,6 +251,14 @@ public final class LiveAnalyzer implements AutoCloseable {
   private static String encode(ObjectMapper json, VerdictReport report) {
     try {
       return json.writeValueAsString(report);
+    } catch (JsonProcessingException failure) {
+      throw new UncheckedIOException(failure);
+    }
+  }
+
+  private static String encodeEnvelope(ObjectMapper json, ObservationEnvelope envelope) {
+    try {
+      return json.writeValueAsString(envelope);
     } catch (JsonProcessingException failure) {
       throw new UncheckedIOException(failure);
     }

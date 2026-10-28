@@ -7,6 +7,13 @@ dependencies {
     implementation(libs.otel.proto)
 }
 
+tasks.register<JavaExec>("liveAnalyzer") {
+    group = "application"
+    description = "Receive live OTLP observations for an application-declared manifest."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("dev.spanlease.analyzer.LiveAnalyzer")
+}
+
 tasks.register<JavaExec>("modelMvp") {
     group = "verification"
     description = "Run the pre-G0 in-memory detector model demonstration."
