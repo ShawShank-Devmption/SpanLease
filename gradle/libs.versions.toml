@@ -7,7 +7,8 @@
 java = "21"
 gradle = "8.12.1"
 distribution-sha256 = "8d97a97984f6cbd2b85fe4c60a743440a347544bf18818048e611f5288d46c94"
-grpc = "1.68.1"
+# 1.76.0 adds a universal macOS generator with a native arm64 slice (D16).
+grpc = "1.76.0"
 protobuf = "4.28.3"
 opentelemetry = "1.45.0"          # BOM: SDK, OTLP exporter, logs API
 jackson = "2.18.2"
