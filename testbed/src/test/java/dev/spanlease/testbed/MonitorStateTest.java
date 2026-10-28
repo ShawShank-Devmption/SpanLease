@@ -102,6 +102,20 @@ class MonitorStateTest {
   }
 
   @Test
+  void applicationExitDuringBoutiqueRunIsStoppedNotComplete() {
+    MonitorState state = new MonitorState(20);
+    state.begin(RunPlan.create(Scenario.boutiqueSpareCapacity(), System.currentTimeMillis()));
+    state.applicationStarted(1);
+    state.injected(5);
+    state.faultCompleted("OK", List.of(new StoreStats.AdView("/product/ABCDEFGHIJ", "ad")));
+    assertThat(state.snapshot().phase()).isEqualTo("RUNNING");
+    state.applicationExited(143);
+    assertThat(state.snapshot().phase()).isEqualTo("STOPPED");
+    assertThat(state.snapshot().faultOutcome()).isEqualTo("OK");
+    assertThat(state.snapshot().injectable()).isFalse();
+  }
+
+  @Test
   void chainRunAfterBoutiqueClearsBoutiqueState() {
     MonitorState state = new MonitorState(20);
     state.begin(RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis()));

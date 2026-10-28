@@ -173,7 +173,12 @@ final class MonitorState {
   synchronized void applicationExited(int code) {
     applicationAlive = false;
     exitCode = code;
-    if (!phase.equals("FAILED")) phase = applicationCompleted ? "COMPLETE" : "STOPPED";
+    if (!phase.equals("FAILED")) {
+      phase =
+          scenario.application() == Scenario.Application.CHAIN && applicationCompleted
+              ? "COMPLETE"
+              : "STOPPED";
+    }
     notifyAll();
   }
 

@@ -60,6 +60,43 @@ class LiveMonitorTest {
     }
   }
 
+  @Test
+  void injectRequiresPostTokenAndOrigin() throws Exception {
+    try (LiveMonitor monitor = LiveMonitor.start(0, runs)) {
+      assertThat(send(monitor, "/api/inject", null, null, "GET").statusCode()).isEqualTo(405);
+      assertThat(send(monitor, "/api/inject", null, null, "POST").statusCode()).isEqualTo(403);
+      assertThat(
+              send(monitor, "/api/inject", token(monitor), "http://evil.test", "POST").statusCode())
+          .isEqualTo(403);
+    }
+  }
+
+  @Test
+  void injectWithoutRunningInjectableRunIs409() throws Exception {
+    try (LiveMonitor monitor = LiveMonitor.start(0, runs)) {
+      assertThat(send(monitor, "/api/inject", token(monitor), monitor.url(), "POST").statusCode())
+          .isEqualTo(409);
+    }
+  }
+
+  @Test
+  void unknownScenarioIs400() throws Exception {
+    try (LiveMonitor monitor = LiveMonitor.start(0, runs)) {
+      assertThat(
+              send(monitor, "/api/run?scenario=boutique", token(monitor), monitor.url(), "POST")
+                  .statusCode())
+          .isEqualTo(400);
+    }
+  }
+
+  private static String token(LiveMonitor monitor) throws Exception {
+    var matcher =
+        Pattern.compile("name=\"control-token\" content=\"([a-f0-9]+)\"")
+            .matcher(send(monitor, "/", null, null, "GET").body());
+    assertThat(matcher.find()).isTrue();
+    return matcher.group(1);
+  }
+
   private static HttpResponse<String> send(
       LiveMonitor monitor, String path, String token, String origin, String method)
       throws Exception {

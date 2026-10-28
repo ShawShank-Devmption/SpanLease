@@ -24,10 +24,12 @@ public final class LiveMonitor implements AutoCloseable {
   private final MonitorState state = new MonitorState(2_000);
   private final String token = UUID.randomUUID().toString().replace("-", "");
   private final Path runsDirectory;
+  private final InetSocketAddress edgeBind;
   private volatile MonitorRun activeRun;
 
-  private LiveMonitor(int port, Path runsDirectory) throws IOException {
+  private LiveMonitor(int port, Path runsDirectory, InetSocketAddress edgeBind) throws IOException {
     this.runsDirectory = runsDirectory;
+    this.edgeBind = edgeBind;
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 16);
     server.createContext("/", this::handle);
     server.setExecutor(http);
@@ -35,7 +37,12 @@ public final class LiveMonitor implements AutoCloseable {
   }
 
   public static LiveMonitor start(int port, Path runsDirectory) throws IOException {
-    return new LiveMonitor(port, runsDirectory);
+    return start(port, runsDirectory, new InetSocketAddress("127.0.0.1", 9555));
+  }
+
+  static LiveMonitor start(int port, Path runsDirectory, InetSocketAddress edgeBind)
+      throws IOException {
+    return new LiveMonitor(port, runsDirectory, edgeBind);
   }
 
   public String url() {
@@ -54,6 +61,10 @@ public final class LiveMonitor implements AutoCloseable {
       String path = exchange.getRequestURI().getPath();
       if (path.equals("/api/run")) {
         run(exchange);
+        return;
+      }
+      if (path.equals("/api/inject")) {
+        inject(exchange);
         return;
       }
       if (!exchange.getRequestMethod().equals("GET")) {
@@ -94,10 +105,10 @@ public final class LiveMonitor implements AutoCloseable {
     }
   }
 
-  private void run(HttpExchange exchange) throws IOException {
+  private boolean authorized(HttpExchange exchange) throws IOException {
     if (!exchange.getRequestMethod().equals("POST")) {
       respond(exchange, 405, "text/plain", "POST required");
-      return;
+      return false;
     }
     String supplied = exchange.getRequestHeaders().getFirst("X-SpanLease-Control");
     String origin = exchange.getRequestHeaders().getFirst("Origin");
@@ -108,8 +119,23 @@ public final class LiveMonitor implements AutoCloseable {
             && !origin.equals(url())
             && !origin.equals("http://localhost:" + server.getAddress().getPort())) {
       respond(exchange, 403, "text/plain", "local control token and same origin required");
+      return false;
+    }
+    return true;
+  }
+
+  private void inject(HttpExchange exchange) throws IOException {
+    if (!authorized(exchange)) return;
+    MonitorRun run = activeRun;
+    if (run == null || !run.inject()) {
+      respond(exchange, 409, "text/plain", "no running injectable workload");
       return;
     }
+    respond(exchange, 200, "application/json", "{\"injected\":true}");
+  }
+
+  private void run(HttpExchange exchange) throws IOException {
+    if (!authorized(exchange)) return;
     String query = exchange.getRequestURI().getRawQuery();
     String selected =
         query != null && query.startsWith("scenario=") && !query.contains("&")
@@ -130,7 +156,7 @@ public final class LiveMonitor implements AutoCloseable {
     runner.submit(
         () -> {
           try {
-            try (MonitorRun live = MonitorRun.start(plan, runsDirectory, state)) {
+            try (MonitorRun live = MonitorRun.start(plan, runsDirectory, state, edgeBind)) {
               activeRun = live;
               live.awaitExit();
             } finally {
@@ -171,8 +197,18 @@ public final class LiveMonitor implements AutoCloseable {
   }
 
   public static void main(String[] args) throws Exception {
-    int port = args.length == 0 ? 8088 : Integer.parseInt(args[0]);
-    LiveMonitor monitor = start(port, Path.of("monitor-runs"));
+    int port = 8088;
+    InetSocketAddress bind = new InetSocketAddress("127.0.0.1", 9555);
+    for (int index = 0; index < args.length; index++) {
+      if (args[index].equals("--edge-bind") && index + 1 < args.length) {
+        bind = MonitorApplication.edgeBind(args[++index]);
+      } else if (index == 0 && !args[index].startsWith("--")) {
+        port = Integer.parseInt(args[index]);
+      } else {
+        throw new IllegalArgumentException("usage: [monitor-port] [--edge-bind host:port]");
+      }
+    }
+    LiveMonitor monitor = start(port, Path.of("monitor-runs"), bind);
     Runtime.getRuntime()
         .addShutdownHook(
             new Thread(
