@@ -39,8 +39,9 @@ directories and is excluded from handwritten-source formatting. grpc-java's
 The shared grpc-java 1.76.0 pin includes native Apple Silicon generation; Rosetta is
 not required. See [ARM verification](docs/native-arm-demo-verification.md).
 
-`:testbed:integrationTest` is defined but currently has no test sources. It does not
-satisfy I-LITMUS/I-CI. A successful build or live demo is not G1 or G2 acceptance.
+`:testbed:integrationTest` contains the closed-ring and spare-capacity litmus
+regressions, and CI invokes `integrationTest`. These are implemented, pre-G1, not
+accepted as formal I-LITMUS/I-CI evidence. A successful build or live demo is not G1 or G2 acceptance.
 CI runs the real build unconditionally; it no longer treats a skipped build as success.
 
 ## Live demo
@@ -118,3 +119,27 @@ See [verification evidence](docs/bootstrap-verification.md) and tasks.md for sta
 
 Review these artifacts, then commit/push on the team's agreed branch. Local creation
 alone does not update the remote or unblock a developer who lacks the artifacts.
+
+## Final demo
+
+See the [final demo runbook](docs/final-demo-guide.md) for startup, the five-minute
+walkthrough, troubleshooting and the pending verification record. The monitor offers
+**Synthetic** Chain scenarios and an **Online Boutique** UI. On this Dev 2 branch,
+Boutique runtime/edge/Compose support (T1–T6) remains a separate pending handoff;
+selecting the UI does not provide those services. The two litmus regressions run with:
+
+```sh
+./gradlew integrationTest
+```
+
+Final Docker rehearsal and G1–G3 acceptance remain pending.
+
+## Research references
+
+- [DDMon · OOPSLA 2025](https://doi.org/10.1145/3763069): deadlock-monitor comparison.
+- [RCAEval · WWW 2025](https://doi.org/10.1145/3701716.3715290): telemetry dataset reference.
+- [Microservice Benchmark Applications · 2025](https://doi.org/10.1007/978-3-031-85634-1_15): TeaStore workload reference.
+
+These references guide workloads and comparison. The live feed comes from the named
+application, not these papers. Historical datasets alone do not provide SpanLease's
+custom evidence. See the [literature review](docs/literature-review.md) for claim limits.

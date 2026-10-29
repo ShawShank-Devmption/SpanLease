@@ -202,3 +202,24 @@ Ad-Service-only scope of the 2026-10-27 Boutique specification. *Why:* demonstra
 live upstream traffic while preserving design §4 driver semantics and causal joins.
 *Affects:* testbed Boutique deployment and demo configuration; no schema change,
 G1–G3 acceptance or E-REALISM evidence is implied.
+
+**D22 | 2026-10-29 | Flat monotone operator UI and references in README.**
+The owner requested a simpler monitor layout with explicit light/dark flat tokens,
+collapsed event/diagnostic/raw details and source-specific controls. Move the three
+research links from the page to README without dropping their provenance or the
+warning that publications are not the live feed. Preserve report-driven verdicts,
+process controls and timestamped diagnostic distinctions; this presentation change
+does not alter detector semantics or establish G1–G3 acceptance. The Boutique UI
+requires the separately pending T1–T6 runtime handoff. *Affects:* final-demo T7/T8,
+static monitor assets and README; no detector wire contract change.
+
+**D23 | 2026-10-29 | Automated litmus regressions precede formal acceptance.**
+Add the two real gRPC → OTLP → analyzer litmus tests to Gradle `integrationTest` and
+invoke that suite in CI. Expected closed-ring units and queue location come from the
+scenario topology and manifest instance IDs, never analyzer-produced expected values;
+the spare-capacity test requires completion and a certified negative during leaf work.
+These are **implemented, pre-G1, not accepted** end-to-end regressions, with no
+independent A-TRUTH recorder. CI configuration is not evidence that a remote CI run
+passed. Actual command results belong in verification records. Formal I-LITMUS/I-CI
+and G2 acceptance still require the G1 review and existing task prerequisites; G1–G3
+remain pending. *Affects:* final-demo T9 and CI, not the analyzer's confirmation rules.

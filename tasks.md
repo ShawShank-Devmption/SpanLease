@@ -90,6 +90,44 @@ and `docs/dev-b-stage0-readiness.md`. Their statements that Dev C review/G0 were
 pending describe that earlier branch snapshot; the later D13/D14 solo review and
 stage-1 inventory above remain the implementation baseline. The imported evidence
 does not establish independent Dev C review or G1–G3 acceptance.
+### Final demo — 2026-10-29
+
+This Dev 2 handoff follows the [final-demo plan](docs/superpowers/plans/2026-10-29-final-demo.md).
+Implementation status is distinct from verification and gate acceptance.
+
+| Task | Owner | Status on this branch |
+|---|---|---|
+| T1 — Boutique scenarios and snapshot fields | Dev 1 | Pending runtime handoff |
+| T2 — Upstream ad-service adaptation | Dev 1 | Pending runtime/source handoff |
+| T3 — Edge driver, deployment and injection | Dev 1 | Pending runtime handoff |
+| T4 — Monitor process/control integration | Dev 1 | Pending runtime handoff |
+| T5 — Boutique real-process evidence tests | Dev 1 | Pending runtime and verification |
+| T6 — Pinned Compose store and reconnect measurement | Dev 1 | Pending deployment and Docker verification |
+| T7 — Flat monotone monitor layout | Dev 2 | UI implementation added; final browser rehearsal pending |
+| T8 — Source toggle and Boutique UI | Dev 2 | UI implementation added; live Boutique verification blocked on T1–T6 |
+| T9 — Real litmus integration tests and CI | Dev 2 | Implemented, pre-G1, not accepted; two local integration tests passed |
+| T10 — README, runbook and status | Dev 2 | Documentation added; actual verification section remains pending |
+| T11 — Clean-clone rehearsal and sign-off | Both | Pending; no final-demo run IDs or Docker/cadence results claimed |
+
+I-LITMUS/I-CI: **implemented, pre-G1, not accepted** for the two automated litmus
+regressions and CI invocation only. Their expected core uses topology and manifest
+unit IDs, with no independent truth recorder. Their existing prerequisites and formal
+acceptance remain unchanged. G1/G2/G3 are not accepted by this handoff.
+
+Local Dev 2 verification on 2026-10-29 on Darwin arm64
+(`Ananyas-MacBook-Air.local`): Java 21.0.13 build passed 106 tests;
+`spotlessApply` and `integrationTest` passed, with two real litmus tests. Nine Node
+DOM tests passed. CI is configured for Node 22 DOM tests and artifact uploads;
+remote CI execution is not claimed. No browser was available, so desktop/mobile light/dark visual
+verification remains pending alongside T11 clean-clone/Docker rehearsal. See the
+[runbook verification record](docs/final-demo-guide.md#verified-on) for the JDK path
+and scope of these checks.
+
+The remaining backlog is A-TRUTH independent gate truth, A-FAULT/I-FAULT fault runs,
+bare/instrumented equivalence, B-INTEROP SDK retry/partial-success, C-REPLAY archive,
+C-TIME full endpoint search, C-PROOF, G1/G2/G3 reviews, baselines (E-*), eval workspace,
+statistics, reproduction package and paper. The [runbook](docs/final-demo-guide.md)
+records the pending rehearsal and session/clock limits.
 
 ## 1. Ownership and working rules
 

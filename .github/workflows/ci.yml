@@ -15,7 +15,20 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Monitor DOM regressions
+        run: node --test testbed/src/test/js/monitor.test.cjs
       - name: Build, format check, unit + property tests
         run: ./gradlew --no-daemon build
-      # I-CI adds mandatory integrationTest execution with the real detector litmus suite.
-      # A-BOOT's loopback compatibility test is part of test, not that litmus suite.
+      - name: Litmus integration tests
+        run: ./gradlew --no-daemon integrationTest
+      - name: Upload test reports and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-and-results
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
