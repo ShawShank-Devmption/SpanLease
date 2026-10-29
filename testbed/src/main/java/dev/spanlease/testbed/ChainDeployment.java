@@ -1,11 +1,8 @@
 package dev.spanlease.testbed;
 
-import dev.spanlease.instrumentation.OtlpTelemetry;
 import java.io.IOException;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -15,9 +12,7 @@ import java.util.function.Supplier;
  * root driver, each with its own process epoch and OTLP pipeline to the analyzer endpoint.
  */
 public final class ChainDeployment implements AutoCloseable {
-  private static final int SINK_CAPACITY = 8_192;
-
-  private final List<OtlpTelemetry> telemetry = new ArrayList<>();
+  private final TelemetryPipelines telemetry = new TelemetryPipelines();
   private final Map<String, ChainNode> nodes = new LinkedHashMap<>();
   private final HandlerJournal journal = new HandlerJournal(Clock.systemUTC());
   private ChainDriver driver;
@@ -46,7 +41,7 @@ public final class ChainDeployment implements AutoCloseable {
       Map<String, Integer> ports = new LinkedHashMap<>();
       for (Map.Entry<String, String> entry : plan.instanceByService().entrySet()) {
         String service = entry.getKey();
-        OtlpTelemetry pipeline = deployment.open(otlpEndpoint, entry.getValue());
+        var pipeline = deployment.telemetry.open(otlpEndpoint, entry.getValue());
         ChainNode node =
             ChainNode.start(
                 service,
@@ -61,7 +56,7 @@ public final class ChainDeployment implements AutoCloseable {
         ports.put(service, node.port());
       }
       deployment.nodes.values().forEach(node -> node.connect(ports));
-      OtlpTelemetry driverPipeline = deployment.open(otlpEndpoint, plan.driverInstanceId());
+      var driverPipeline = deployment.telemetry.open(otlpEndpoint, plan.driverInstanceId());
       deployment.driver =
           new ChainDriver(
               plan.driverInstanceId(),
@@ -88,12 +83,6 @@ public final class ChainDeployment implements AutoCloseable {
     return journal;
   }
 
-  private OtlpTelemetry open(String endpoint, String instanceId) {
-    OtlpTelemetry pipeline = OtlpTelemetry.start(endpoint, instanceId, SINK_CAPACITY);
-    telemetry.add(pipeline);
-    return pipeline;
-  }
-
   /** Stops instances, emitting a final checkpoint each, then flushes every OTLP pipeline. */
   @Override
   public void close() throws InterruptedException {
@@ -103,8 +92,6 @@ public final class ChainDeployment implements AutoCloseable {
     for (ChainNode node : nodes.values()) {
       node.close();
     }
-    for (OtlpTelemetry pipeline : telemetry) {
-      pipeline.close();
-    }
+    telemetry.close();
   }
 }

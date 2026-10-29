@@ -1,9 +1,5 @@
 package dev.spanlease.testbed;
 
-import dev.spanlease.instrumentation.InstanceRecorder;
-import dev.spanlease.instrumentation.LeasePolicy;
-import dev.spanlease.instrumentation.OtlpTelemetry;
-import dev.spanlease.instrumentation.PeriodicScanner;
 import dev.spanlease.instrumentation.RootCaller;
 import hipstershop.AdServiceGrpc;
 import hipstershop.Demo;
@@ -14,8 +10,6 @@ import io.grpc.stub.MetadataUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.time.Clock;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 final class BoutiqueDeployment implements AutoCloseable {
   private final Scenario scenario;
   private final StoreTraffic traffic = new StoreTraffic();
-  private final List<OtlpTelemetry> telemetry = new ArrayList<>();
+  private final TelemetryPipelines telemetry = new TelemetryPipelines();
   private final Map<String, BoutiqueAdNode> nodes = new LinkedHashMap<>();
   private final ExecutorService faultThread =
       Executors.newSingleThreadExecutor(
@@ -40,8 +34,7 @@ final class BoutiqueDeployment implements AutoCloseable {
             return thread;
           });
   private final Context.CancellableContext faultContext = Context.ROOT.withCancellation();
-  private InstanceRecorder driver;
-  private PeriodicScanner scanner;
+  private RootInstrumentation root;
   private RootCaller roots;
   private ManagedChannel adsA;
   private BoutiqueEdge edge;
@@ -76,7 +69,7 @@ final class BoutiqueDeployment implements AutoCloseable {
                 instance,
                 plan.scenario().capacities().get(service),
                 plan.manifest().parameters(),
-                deployment.open(endpoint, instance).sink(),
+                deployment.telemetry.open(endpoint, instance).sink(),
                 () -> UUID.randomUUID().toString(),
                 diagnostics,
                 journal,
@@ -88,21 +81,13 @@ final class BoutiqueDeployment implements AutoCloseable {
         ports.put(service, node.port());
       }
       deployment.nodes.values().forEach(node -> node.connect(ports));
-      deployment.driver =
-          new InstanceRecorder(
+      deployment.root =
+          new RootInstrumentation(
               plan.driverInstanceId(),
-              deployment.open(endpoint, plan.driverInstanceId()).sink(),
-              Clock.systemUTC(),
-              System::nanoTime);
-      deployment.scanner =
-          new PeriodicScanner(
-              deployment.driver,
-              List.of(),
-              LeasePolicy.DEFAULT,
-              Duration.ofMillis(LeasePolicy.DEFAULT.renewalMs() / 2),
-              Duration.ofMillis(plan.manifest().parameters().checkpointIntervalMs()),
-              "boutique-driver-scanner");
-      deployment.roots = new RootCaller(deployment.driver, () -> UUID.randomUUID().toString());
+              plan.manifest().parameters(),
+              deployment.telemetry.open(endpoint, plan.driverInstanceId()).sink(),
+              () -> UUID.randomUUID().toString());
+      deployment.roots = deployment.root.caller();
       deployment.adsA =
           NettyChannelBuilder.forAddress("127.0.0.1", ports.get("ads-a"))
               .usePlaintext()
@@ -156,12 +141,6 @@ final class BoutiqueDeployment implements AutoCloseable {
         faultThread);
   }
 
-  private OtlpTelemetry open(String endpoint, String instance) {
-    OtlpTelemetry pipeline = OtlpTelemetry.start(endpoint, instance, 8_192);
-    telemetry.add(pipeline);
-    return pipeline;
-  }
-
   @Override
   public void close() throws InterruptedException {
     synchronized (this) {
@@ -174,8 +153,7 @@ final class BoutiqueDeployment implements AutoCloseable {
     faultThread.shutdownNow();
     faultThread.awaitTermination(5, TimeUnit.SECONDS);
     for (BoutiqueAdNode node : nodes.values()) node.close();
-    if (scanner != null) scanner.close();
-    if (driver != null) driver.checkpoint();
-    for (OtlpTelemetry pipeline : telemetry) pipeline.close();
+    if (root != null) root.close();
+    telemetry.close();
   }
 }

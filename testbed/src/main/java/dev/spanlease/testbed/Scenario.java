@@ -21,7 +21,8 @@ public record Scenario(
     Map<String, Integer> capacities,
     List<Hop> rootHops,
     Duration rootDeadline,
-    Duration observationWindow) {
+    Duration observationWindow,
+    MonitorBehavior monitorBehavior) {
   public static final Duration DEFAULT_ROOT_DEADLINE = Duration.ofSeconds(30);
 
   public Scenario {
@@ -42,6 +43,7 @@ public record Scenario(
     capacities = services;
     Objects.requireNonNull(rootDeadline, "rootDeadline");
     Objects.requireNonNull(observationWindow, "observationWindow");
+    Objects.requireNonNull(monitorBehavior, "monitorBehavior");
   }
 
   /**
@@ -110,15 +112,15 @@ public record Scenario(
   }
 
   public boolean manualStop() {
-    return name.equals("closed-ring") || application == Application.BOUTIQUE;
+    return monitorBehavior.manualStop();
   }
 
   public boolean injectable() {
-    return name.equals("boutique-deadlock") || name.equals("boutique-spare-capacity");
+    return monitorBehavior.injectable();
   }
 
   public boolean rootWithoutDeadline() {
-    return name.equals("closed-ring") || name.equals("boutique-deadlock");
+    return monitorBehavior.rootWithoutDeadline();
   }
 
   private static Scenario boutique(
@@ -139,7 +141,8 @@ public record Scenario(
         capacities,
         hops,
         DEFAULT_ROOT_DEADLINE,
-        Duration.ofSeconds(8));
+        Duration.ofSeconds(8),
+        new MonitorBehavior(true, cycle, cycle && !spareCapacity));
   }
 
   private static Scenario chain(String name, int services, boolean returnToFirst, boolean spare) {
@@ -167,7 +170,8 @@ public record Scenario(
         capacities,
         hops,
         DEFAULT_ROOT_DEADLINE,
-        Duration.ofSeconds(8));
+        Duration.ofSeconds(8),
+        new MonitorBehavior(returnToFirst && !spare, false, returnToFirst && !spare));
   }
 
   private static Hop hop(String service, int workMs) {
@@ -178,4 +182,8 @@ public record Scenario(
     CHAIN,
     BOUTIQUE
   }
+
+  /** Explicit monitor-only lifecycle controls; finite CLI deadlines remain independent. */
+  public record MonitorBehavior(
+      boolean manualStop, boolean injectable, boolean rootWithoutDeadline) {}
 }

@@ -39,7 +39,7 @@ public final class MonitorApplication {
     RunPlan plan = new RunPlan(scenario, driver, instances, manifest);
     RuntimeDiagnostics diagnostics = new RuntimeDiagnostics();
     if (scenario.application() == Scenario.Application.BOUTIQUE) {
-      runBoutique(plan, args[2], diagnostics);
+      runBoutique(plan, args[2], Long.parseLong(args[3]), diagnostics);
       return;
     }
     var sampler = Executors.newSingleThreadScheduledExecutor();
@@ -80,14 +80,25 @@ public final class MonitorApplication {
     }
   }
 
-  private static void runBoutique(RunPlan plan, String endpoint, RuntimeDiagnostics diagnostics)
-      throws Exception {
+  private static void runBoutique(
+      RunPlan plan, String endpoint, long seed, RuntimeDiagnostics diagnostics) throws Exception {
     var json = ContractJson.mapper();
     InetSocketAddress bind =
         edgeBind(System.getProperty("spanlease.boutique.edge", "127.0.0.1:9555"));
     var sampler = Executors.newSingleThreadScheduledExecutor();
-    try (BoutiqueDeployment deployment =
-        BoutiqueDeployment.start(plan, endpoint, bind, 42, diagnostics)) {
+    BoutiqueDeployment deployment;
+    try {
+      deployment = BoutiqueDeployment.start(plan, endpoint, bind, seed, diagnostics);
+    } catch (Exception failure) {
+      String message =
+          failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+      System.out.println("STARTUP_FAILED " + json.writeValueAsString(Map.of("message", message)));
+      throw failure;
+    }
+    Thread shutdownHook = new Thread(() -> closeBoutique(deployment), "boutique-shutdown-cleanup");
+    Runtime.getRuntime().addShutdownHook(shutdownHook);
+    try {
+      System.out.println("STARTED");
       sampler.scheduleAtFixedRate(
           () -> {
             try {
@@ -101,12 +112,14 @@ public final class MonitorApplication {
           0,
           500,
           TimeUnit.MILLISECONDS);
+      CountDownLatch stop = new CountDownLatch(1);
       Thread controls =
           new Thread(
               () -> {
                 try (var input =
                     new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
                   for (String line; (line = input.readLine()) != null; ) {
+                    if (line.equals("STOP")) break;
                     if (!line.equals("INJECT")) continue;
                     try {
                       var fault = deployment.inject();
@@ -144,15 +157,34 @@ public final class MonitorApplication {
                   }
                 } catch (Exception failure) {
                   System.err.println("Boutique control unavailable: " + failure.getMessage());
+                } finally {
+                  stop.countDown();
                 }
               },
               "boutique-controls");
       controls.setDaemon(true);
       controls.start();
-      new CountDownLatch(1).await();
+      stop.await();
     } finally {
       sampler.shutdownNow();
       sampler.awaitTermination(5, TimeUnit.SECONDS);
+      try {
+        deployment.close();
+      } finally {
+        try {
+          Runtime.getRuntime().removeShutdownHook(shutdownHook);
+        } catch (IllegalStateException shutdownInProgress) {
+          // The hook owns cleanup once JVM shutdown has begun.
+        }
+      }
+    }
+  }
+
+  private static void closeBoutique(BoutiqueDeployment deployment) {
+    try {
+      deployment.close();
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
     }
   }
 

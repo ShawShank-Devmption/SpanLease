@@ -2,7 +2,12 @@ package dev.spanlease.testbed;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.spanlease.common.ContractJson;
 import dev.spanlease.common.EventPayload;
+import dev.spanlease.common.EventPayload.CancelReason;
+import dev.spanlease.common.EventPayload.CancelSource;
+import dev.spanlease.common.EventPayload.CompletionKind;
+import dev.spanlease.common.EventPayload.Outcome;
 import dev.spanlease.common.ObservationEnvelope;
 import dev.spanlease.common.ObservationEvent;
 import dev.spanlease.common.Verdict;
@@ -170,6 +175,61 @@ class MonitorStateTest {
     assertThat(state.snapshot().unitLatest())
         .hasSize(chain.manifest().pools().stream().mapToInt(pool -> pool.unitIds().size()).sum())
         .allSatisfy(unitView -> assertThat(unitView.state()).isEqualTo("unknown"));
+  }
+
+  @Test
+  void olderSlotEventsCannotRollTheDisplayProjectionBackward() {
+    MonitorState state = new MonitorState(20);
+    RunPlan boutique = RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis());
+    state.begin(boutique);
+    String instance = boutique.instanceByService().get("ads-a");
+    String unit = instance + ":app:slot-0";
+
+    state.observe(event(instance, 1, new EventPayload.ResourceInit("app", 1, List.of(unit))));
+    state.observe(event(instance, 4, new EventPayload.ResourceAcquire("exec-1", unit, "inv-1")));
+    state.observe(event(instance, 6, new EventPayload.ResourceRelease("exec-1", unit)));
+    state.observe(event(instance, 4, new EventPayload.ResourceAcquire("exec-1", unit, "inv-1")));
+    state.observe(event(instance, 1, new EventPayload.ResourceInit("app", 1, List.of(unit))));
+
+    assertThat(state.snapshot().unitLatest())
+        .contains(new MonitorState.UnitView(unit, instance, "free", "", 6));
+  }
+
+  @Test
+  void serviceProjectionUsesNewestEntityTransitionsAndEveryReceivedSequence() {
+    MonitorState state = new MonitorState(20);
+    RunPlan boutique = RunPlan.create(Scenario.boutiqueDeadlock(), System.currentTimeMillis());
+    state.begin(boutique);
+    String instance = boutique.instanceByService().get("ads-a");
+
+    state.observe(event(instance, 10, new EventPayload.ResourceWaitBegin("queued-1", "app")));
+    state.observe(
+        event(
+            instance,
+            12,
+            new EventPayload.ExecutionCancel(
+                "", "queued-1", CancelSource.CLIENT, CancelReason.REQUESTED)));
+    state.observe(event(instance, 10, new EventPayload.ResourceWaitBegin("queued-1", "app")));
+    state.observe(event(instance, 20, new EventPayload.RpcBlockBegin("exec-1", "downstream-1")));
+    state.observe(
+        event(
+            instance,
+            22,
+            new EventPayload.RpcBlockEnd(
+                "exec-1", "downstream-1", Outcome.CANCELLED, CompletionKind.LOCAL)));
+    state.observe(event(instance, 20, new EventPayload.RpcBlockBegin("exec-1", "downstream-1")));
+    state.observe(event(instance, 30, new EventPayload.InstanceCheckpoint(29, 0)));
+
+    var json = ContractJson.mapper().valueToTree(state.snapshot());
+    assertThat(json.path("service_latest")).hasSize(3);
+    var adsA =
+        java.util.stream.StreamSupport.stream(json.path("service_latest").spliterator(), false)
+            .filter(view -> view.path("instance_id").asText().equals(instance))
+            .findFirst()
+            .orElseThrow();
+    assertThat(adsA.path("local_seq").asLong()).isEqualTo(30);
+    assertThat(adsA.path("blocked").asInt()).isZero();
+    assertThat(adsA.path("queued").asInt()).isZero();
   }
 
   private static ObservationEnvelope event(long seq) {

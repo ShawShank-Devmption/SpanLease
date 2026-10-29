@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 
 /** Owns an analyzer and a separate killable workload. Process exit is never a detector verdict. */
 final class MonitorRun implements AutoCloseable {
+  private static final long DEMO_SEED = 42L;
+
   private final Process application;
   private final AnalyzerProcess analyzer;
   private final MonitorState state;
@@ -56,7 +58,7 @@ final class MonitorRun implements AutoCloseable {
               directory.resolve("boutique-config.json").toFile(),
               new BoutiqueConfig(
                   plan.scenario().name(),
-                  42,
+                  DEMO_SEED,
                   edgeBind.getHostString() + ":" + edgeBind.getPort(),
                   "v0.10.7",
                   "38e7348eb289eb5b87c0c6e8cb19ced0449dc389"));
@@ -76,7 +78,8 @@ final class MonitorRun implements AutoCloseable {
                   MonitorApplication.class.getName(),
                   manifest.toString(),
                   plan.scenario().name(),
-                  "http://127.0.0.1:" + port)
+                  "http://127.0.0.1:" + port,
+                  Long.toString(DEMO_SEED))
               .redirectError(ProcessBuilder.Redirect.INHERIT)
               .start();
       state.applicationStarted(application.pid());
@@ -97,12 +100,17 @@ final class MonitorRun implements AutoCloseable {
     }
   }
 
-  synchronized boolean inject() throws IOException {
-    if (injectRequested || !application.isAlive() || !state.snapshot().injectable()) return false;
-    application.getOutputStream().write("INJECT\n".getBytes(StandardCharsets.UTF_8));
-    application.getOutputStream().flush();
-    injectRequested = true;
-    return true;
+  synchronized boolean inject() {
+    if (injectRequested || !application.isAlive() || !state.canInject()) return false;
+    try {
+      application.getOutputStream().write("INJECT\n".getBytes(StandardCharsets.UTF_8));
+      application.getOutputStream().flush();
+      injectRequested = true;
+      return true;
+    } catch (IOException unavailable) {
+      state.progress("Fault injection rejected because the workload control pipe closed.");
+      return false;
+    }
   }
 
   void awaitExit() throws Exception {
@@ -127,6 +135,10 @@ final class MonitorRun implements AutoCloseable {
           state.store(ContractJson.mapper().readValue(line.substring(6), StoreStats.class));
         } else if (line.startsWith("INJECTED ")) {
           state.injected(ContractJson.mapper().readTree(line.substring(9)).get("at_ms").asLong());
+        } else if (line.startsWith("STARTUP_FAILED ")) {
+          String message =
+              ContractJson.mapper().readTree(line.substring(15)).path("message").asText();
+          state.fail("Boutique workload failed to start: " + message);
         }
       }
     }
@@ -140,15 +152,6 @@ final class MonitorRun implements AutoCloseable {
             + "). Historical evidence retained.");
     MonitorState.Snapshot completed;
     synchronized (state) {
-      if (scenario.application() == Scenario.Application.BOUTIQUE
-          && state.snapshot().store() == null
-          && exit != 0) {
-        state.fail(
-            "Boutique workload failed to start on "
-                + edgeBind.getHostString()
-                + ":"
-                + edgeBind.getPort());
-      }
       state.applicationExited(exit);
       completed = state.snapshot();
     }
@@ -183,10 +186,22 @@ final class MonitorRun implements AutoCloseable {
 
   @Override
   public void close() throws InterruptedException {
-    application.destroy();
+    if (application.isAlive() && scenario.application() == Scenario.Application.BOUTIQUE) {
+      try {
+        application.getOutputStream().write("STOP\n".getBytes(StandardCharsets.UTF_8));
+        application.getOutputStream().flush();
+      } catch (IOException unavailable) {
+        // EOF or a closed pipe will also make the child leave its control loop.
+      }
+    } else if (application.isAlive()) {
+      application.destroy();
+    }
     if (!application.waitFor(5, TimeUnit.SECONDS)) {
-      application.destroyForcibly();
-      application.waitFor(5, TimeUnit.SECONDS);
+      application.destroy();
+      if (!application.waitFor(5, TimeUnit.SECONDS)) {
+        application.destroyForcibly();
+        application.waitFor(5, TimeUnit.SECONDS);
+      }
     }
     analyzer.close();
   }

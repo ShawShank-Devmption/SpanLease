@@ -2,10 +2,6 @@ package dev.spanlease.testbed;
 
 import dev.spanlease.common.RunManifest;
 import dev.spanlease.instrumentation.EventSink;
-import dev.spanlease.instrumentation.InstanceRecorder;
-import dev.spanlease.instrumentation.LeasePolicy;
-import dev.spanlease.instrumentation.PeriodicScanner;
-import dev.spanlease.instrumentation.RootCaller;
 import dev.spanlease.testbed.proto.CallReply;
 import dev.spanlease.testbed.proto.CallRequest;
 import dev.spanlease.testbed.proto.ChainGrpc;
@@ -35,9 +31,7 @@ import java.util.function.Supplier;
  * any detector verdict.
  */
 public final class ChainDriver implements AutoCloseable {
-  private final InstanceRecorder recorder;
-  private final PeriodicScanner scanner;
-  private final RootCaller rootCaller;
+  private final RootInstrumentation root;
   private final Clock clock = Clock.systemUTC();
   private final ExecutorService rootThreads =
       Executors.newCachedThreadPool(
@@ -53,16 +47,7 @@ public final class ChainDriver implements AutoCloseable {
       RunManifest.Parameters parameters,
       EventSink sink,
       Supplier<String> invocationIds) {
-    this.recorder = new InstanceRecorder(instanceId, sink, clock, System::nanoTime);
-    this.scanner =
-        new PeriodicScanner(
-            recorder,
-            List.of(),
-            LeasePolicy.DEFAULT,
-            Duration.ofMillis(LeasePolicy.DEFAULT.renewalMs() / 2),
-            Duration.ofMillis(parameters.checkpointIntervalMs()),
-            "driver-scanner");
-    this.rootCaller = new RootCaller(recorder, invocationIds);
+    this.root = new RootInstrumentation(instanceId, parameters, sink, invocationIds);
   }
 
   public void connect(Map<String, Integer> servicePorts) {
@@ -103,10 +88,11 @@ public final class ChainDriver implements AutoCloseable {
               Context previous = context.attach();
               try {
                 var stub = ChainGrpc.newBlockingStub(channel);
-                return rootCaller.call(
-                    target,
-                    rootDeadline == null ? stub : stub.withDeadline(rootDeadline),
-                    client -> client.call(request));
+                return root.caller()
+                    .call(
+                        target,
+                        rootDeadline == null ? stub : stub.withDeadline(rootDeadline),
+                        client -> client.call(request));
               } finally {
                 context.detach(previous);
               }
@@ -127,8 +113,7 @@ public final class ChainDriver implements AutoCloseable {
       channel.awaitTermination(5, TimeUnit.SECONDS);
     }
     rootThreads.shutdownNow();
-    recorder.checkpoint();
-    scanner.close();
+    root.close();
   }
 
   /** One in-flight root request. A null deadline is exclusive to the interactive monitor run. */

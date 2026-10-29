@@ -37,6 +37,11 @@ class BoutiqueScenarioTest {
     assertThat(Scenario.named("closed-ring").application()).isEqualTo(Scenario.Application.CHAIN);
     assertThat(Scenario.named("closed-ring").rootWithoutDeadline()).isTrue();
     assertThat(Scenario.named("spare-capacity").manualStop()).isFalse();
+
+    Scenario fiveServiceRing = Scenario.closedRing(5);
+    assertThat(fiveServiceRing.name()).isEqualTo("closed-ring-5");
+    assertThat(fiveServiceRing.manualStop()).isTrue();
+    assertThat(fiveServiceRing.rootWithoutDeadline()).isTrue();
   }
 
   @Test

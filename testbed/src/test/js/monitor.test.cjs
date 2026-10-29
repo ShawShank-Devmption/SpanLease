@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.resolve(__dirname,'../../main/resources/monitor/monitor.js'),'utf8');
+const styles = fs.readFileSync(path.resolve(__dirname,'../../main/resources/monitor/monitor.css'),'utf8');
 function harness() {
   const nodes = new Map();
   class Node {
@@ -41,9 +42,10 @@ test('render accepts idle Chain snapshot without new contract fields',()=>{
  const h=harness();h.run("render({phase:'IDLE',manifest:null,observed_total:0})");assert.equal(h.get('start').disabled,false);assert.match(h.get('source').textContent,/Chain\/Call/);
 });
 test('slots use bounded latest map even when display observations were truncated',()=>{
- const h=harness();h.run(`render({phase:'RUNNING',application:'BOUTIQUE',application_alive:true,observed_total:10000,discarded_observations:9000,observations:[],progress:[],manifest:{run_id:'test',instances:[{instance_id:'a',service_binding:'ads-a'}],pools:[{instance_id:'a',unit_ids:['slot-0']}]},unit_latest:[{instance_id:'a',unit_id:'slot-0',state:'held',execution_id:'exec',local_seq:100}]})`);
+ const h=harness();h.run(`render({phase:'RUNNING',application:'BOUTIQUE',application_alive:true,observed_total:10000,discarded_observations:9000,observations:[],progress:[],manifest:{run_id:'test',instances:[{instance_id:'a',service_binding:'ads-a'}],pools:[{instance_id:'a',unit_ids:['slot-0']}]},service_latest:[{instance_id:'a',local_seq:140,blocked:2,queued:1}],unit_latest:[{instance_id:'a',unit_id:'slot-0',state:'held',execution_id:'exec',local_seq:100}]})`);
  assert.equal(h.get('services').children[0].children.at(-1).children[0].className,'slot held');
- assert.match(h.get('services').children[0].children[1].textContent,/seq 100/);
+ assert.match(h.get('services').children[0].children[1].textContent,/seq 140/);
+ assert.equal(h.get('services').children[0].children[2].textContent,'2 blocked · 1 queued');
 });
 test('active snapshot follows source and prevents source switching; Chain resets Boutique state',()=>{
  const h=harness();h.run("render({phase:'RUNNING',application:'BOUTIQUE',application_alive:true,manifest:null})");
@@ -70,9 +72,9 @@ test('reload of existing Boutique fault run selects its declared scenario',()=>{
   assert.equal(h.get('scenario').value,id);assert.equal(h.get('inject').hidden,false);
  }
 });
-test('old Chain snapshots preserve untruncated slot observations',()=>{
+test('old snapshots never reconstruct slot state in the browser',()=>{
  const h=harness();h.run(`render({phase:'RUNNING',application_alive:true,observations:[{event:{instance_id:'a',local_seq:1,payload:{event_type:'resource.init',resource_id:'app',unit_ids:['slot-0']}}}],progress:[],manifest:{run_id:'closed-ring-123',instances:[{instance_id:'a',service_binding:'svcA'}],pools:[{instance_id:'a',resource_id:'app',unit_ids:['slot-0']}]}})`);
- assert.equal(h.get('services').children[0].children.at(-1).children[0].className,'slot ');
+ assert.equal(h.get('services').children[0].children.at(-1).children[0].className,'slot unknown');
 });
 test('successful inject remains disabled across stale injectable snapshots',async()=>{
  const h=harness();h.run("offline=false; selectSource('boutique'); $('scenario').value='boutique-deadlock'; latestState={application:'BOUTIQUE',injectable:true};");
@@ -80,4 +82,9 @@ test('successful inject remains disabled across stale injectable snapshots',asyn
  await h.get('inject').listeners.click();
  h.run("renderBoutique({application:'BOUTIQUE',injectable:true})");
  assert.equal(h.get('inject').disabled,true);
+});
+test('flat theme styles every semantic class emitted by the monitor',()=>{
+ for (const selector of ['.service.stopped','.verdict.resolved','.result-good','.result-confirmed','.badge.queued']) {
+  assert.ok(styles.includes(`${selector}{`),`missing ${selector} style`);
+ }
 });

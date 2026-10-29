@@ -45,6 +45,9 @@ final class MonitorState {
   private Long faultCompletedAtMs;
   private final Map<String, UnitView> unitLatest = new TreeMap<>();
   private final Map<String, String> unitInstances = new HashMap<>();
+  private final Map<String, Long> instanceLatestSeq = new TreeMap<>();
+  private final Map<String, Map<String, SequencedPresence>> blockedByInstance = new HashMap<>();
+  private final Map<String, Map<String, SequencedPresence>> queuedByInstance = new HashMap<>();
 
   MonitorState(int observationLimit) {
     if (observationLimit <= 0)
@@ -80,17 +83,24 @@ final class MonitorState {
     faultCompletedAtMs = null;
     unitLatest.clear();
     unitInstances.clear();
+    instanceLatestSeq.clear();
+    blockedByInstance.clear();
+    queuedByInstance.clear();
     manifest
         .pools()
         .forEach(
-            pool ->
-                pool.unitIds()
-                    .forEach(
-                        unit -> {
-                          unitInstances.put(unit, pool.instanceId());
-                          unitLatest.put(
-                              unit, new UnitView(unit, pool.instanceId(), "unknown", "", 0));
-                        }));
+            pool -> {
+              instanceLatestSeq.put(pool.instanceId(), 0L);
+              blockedByInstance.put(pool.instanceId(), new HashMap<>());
+              queuedByInstance.put(pool.instanceId(), new HashMap<>());
+              pool.unitIds()
+                  .forEach(
+                      unit -> {
+                        unitInstances.put(unit, pool.instanceId());
+                        unitLatest.put(
+                            unit, new UnitView(unit, pool.instanceId(), "unknown", "", 0));
+                      });
+            });
     startedAtMs = System.currentTimeMillis();
     phase = "RUNNING";
     return true;
@@ -103,24 +113,52 @@ final class MonitorState {
       discarded++;
     }
     observations.addLast(observation);
+    String instanceId = observation.event().instanceId();
+    long localSeq = observation.event().localSeq();
+    instanceLatestSeq.computeIfPresent(
+        instanceId, (ignored, previous) -> Math.max(previous, localSeq));
     EventPayload payload = observation.event().payload();
     if (payload instanceof EventPayload.ResourceInit init) {
-      init.unitIds().forEach(unit -> updateUnit(unit, "free", "", observation.event().localSeq()));
+      init.unitIds().forEach(unit -> updateUnit(unit, "free", "", localSeq));
+    } else if (payload instanceof EventPayload.ResourceWaitBegin wait) {
+      updatePresence(queuedByInstance, instanceId, wait.invocationId(), localSeq, true);
     } else if (payload instanceof EventPayload.ResourceAcquire acquire) {
-      updateUnit(
-          acquire.resourceInstanceId(),
-          "held",
-          acquire.executionId(),
-          observation.event().localSeq());
+      updatePresence(queuedByInstance, instanceId, acquire.invocationId(), localSeq, false);
+      updateUnit(acquire.resourceInstanceId(), "held", acquire.executionId(), localSeq);
+    } else if (payload instanceof EventPayload.RpcBlockBegin block) {
+      updatePresence(blockedByInstance, instanceId, block.executionId(), localSeq, true);
+    } else if (payload instanceof EventPayload.RpcBlockEnd block) {
+      updatePresence(blockedByInstance, instanceId, block.executionId(), localSeq, false);
+    } else if (payload instanceof EventPayload.ExecutionCancel cancel
+        && cancel.executionId().isEmpty()) {
+      updatePresence(queuedByInstance, instanceId, cancel.invocationId(), localSeq, false);
+    } else if (payload instanceof EventPayload.ExecutionEnd end) {
+      updatePresence(blockedByInstance, instanceId, end.executionId(), localSeq, false);
     } else if (payload instanceof EventPayload.ResourceRelease release) {
-      updateUnit(release.resourceInstanceId(), "free", "", observation.event().localSeq());
+      updatePresence(blockedByInstance, instanceId, release.executionId(), localSeq, false);
+      updateUnit(release.resourceInstanceId(), "free", "", localSeq);
     }
   }
 
   private void updateUnit(String unitId, String state, String executionId, long localSeq) {
     String instanceId = unitInstances.get(unitId);
-    if (instanceId != null) {
+    UnitView previous = unitLatest.get(unitId);
+    if (instanceId != null && (previous == null || localSeq > previous.localSeq())) {
       unitLatest.put(unitId, new UnitView(unitId, instanceId, state, executionId, localSeq));
+    }
+  }
+
+  private static void updatePresence(
+      Map<String, Map<String, SequencedPresence>> states,
+      String instanceId,
+      String entityId,
+      long localSeq,
+      boolean present) {
+    Map<String, SequencedPresence> byEntity = states.get(instanceId);
+    if (byEntity == null) return;
+    SequencedPresence previous = byEntity.get(entityId);
+    if (previous == null || localSeq > previous.localSeq()) {
+      byEntity.put(entityId, new SequencedPresence(localSeq, present));
     }
   }
 
@@ -205,6 +243,10 @@ final class MonitorState {
     notifyAll();
   }
 
+  synchronized boolean canInject() {
+    return scenario != null && scenario.injectable() && applicationAlive && injectedAtMs == null;
+  }
+
   synchronized Snapshot snapshot() {
     Scenario.Application application =
         scenario == null ? Scenario.Application.CHAIN : scenario.application();
@@ -236,13 +278,27 @@ final class MonitorState {
             ? "spanlease.testbed.Chain/Call"
             : "hipstershop.AdService/GetAds",
         scenario != null && scenario.manualStop(),
-        scenario != null && scenario.injectable() && applicationAlive && injectedAtMs == null,
+        canInject(),
         injectedAtMs,
         faultOutcome,
         faultAds,
         faultCompletedAtMs,
         store,
+        instanceLatestSeq.entrySet().stream()
+            .map(
+                entry ->
+                    new ServiceView(
+                        entry.getKey(),
+                        entry.getValue(),
+                        activeCount(blockedByInstance.get(entry.getKey())),
+                        activeCount(queuedByInstance.get(entry.getKey()))))
+            .toList(),
         new ArrayList<>(unitLatest.values()));
+  }
+
+  private static int activeCount(Map<String, SequencedPresence> states) {
+    if (states == null) return 0;
+    return (int) states.values().stream().filter(SequencedPresence::present).count();
   }
 
   record Snapshot(
@@ -275,8 +331,13 @@ final class MonitorState {
       List<StoreStats.AdView> faultAds,
       Long faultCompletedAtMs,
       StoreStats store,
+      List<ServiceView> serviceLatest,
       List<UnitView> unitLatest) {}
+
+  record ServiceView(String instanceId, long localSeq, int blocked, int queued) {}
 
   record UnitView(
       String unitId, String instanceId, String state, String executionId, long localSeq) {}
+
+  private record SequencedPresence(long localSeq, boolean present) {}
 }

@@ -63,10 +63,13 @@ eight-second observation-window cancellation. This deliberately differs from the
 finite CLI and is not evidence about pre-deadline detection latency. The finite
 spare-capacity and slow-progress controls retain their deadlines. Stopping a process
 ends the running application; it is not evidence of successful request completion
-or a new `CONFIRMED_NO_DEADLOCK` report. The parent observes actual process exit,
-shows STOPPED and retains the first positive report, exact identities and interval.
-Latest detector reports remain separately inspectable; uncertainty is never hidden
-by replacing the authoritative latest report with a fabricated positive or negative.
+or by itself a new `CONFIRMED_NO_DEADLOCK` report. The parent observes actual process
+exit, shows STOPPED and retains the first positive report, exact identities and interval.
+For Boutique, normal monitor shutdown sends STOP through the child control pipe; parent
+stdin EOF and TERM also run deployment cleanup. Final releases/checkpoints are flushed
+before a normal exit, so the analyzer may legitimately certify a later negative cut after
+the historical positive. Latest detector reports remain separately inspectable;
+uncertainty is never hidden by replacing an authoritative report with a fabricated verdict.
 
 `RuntimeDiagnostics` binds a running handler's `ExecutionContext` to its actual Java
 thread at entry and removes it at exit. Only the monitor deployment enables these
@@ -87,6 +90,11 @@ The analyzer still retains its full finite-run history: stop interactive runs af
 inspection rather than using this as an unattended monitoring service. Clock
 qualification remains the manifest's recorded one-hour demo interval; later samples
 cannot extend that qualification or create new confirmations.
+
+The browser slot/service cards are a sequence-aware, manifest-bounded display projection.
+An older retried or reordered record cannot overwrite a newer unit/entity transition, and
+the cards show each instance's maximum received local sequence plus current display counts.
+These values do not certify a complete prefix and never feed verdict evaluation.
 
 Regression coverage exercises real gRPC → OTLP → analyzer with a separate workload
 PID, persistence beyond the old observation window, operator process termination,

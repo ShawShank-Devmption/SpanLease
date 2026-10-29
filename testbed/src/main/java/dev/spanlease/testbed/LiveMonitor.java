@@ -188,9 +188,9 @@ public final class LiveMonitor implements AutoCloseable {
   @Override
   public void close() throws InterruptedException {
     server.stop(0);
-    runner.shutdownNow();
     MonitorRun live = activeRun;
     if (live != null) live.close();
+    runner.shutdownNow();
     http.shutdownNow();
     runner.awaitTermination(15, TimeUnit.SECONDS);
     http.awaitTermination(5, TimeUnit.SECONDS);

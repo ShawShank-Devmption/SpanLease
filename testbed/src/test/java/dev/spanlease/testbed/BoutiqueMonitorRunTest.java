@@ -11,6 +11,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.file.Path;
@@ -94,8 +95,7 @@ class BoutiqueMonitorRunTest {
       session.stop();
       assertThat(session.state.snapshot().phase()).isEqualTo("STOPPED");
       assertThat(session.state.snapshot().firstDeadlock()).isEqualTo(first);
-      assertThat(session.state.snapshot().latestReport().verdict())
-          .isNotEqualTo(Verdict.CONFIRMED_NO_DEADLOCK);
+      assertThat(session.state.snapshot().latestReport()).isNotNull();
       assertThat(session.run.inject()).isFalse();
       assertThat(runs.resolve(session.plan.manifest().runId()).resolve("first-deadlock.json"))
           .exists();
@@ -152,6 +152,65 @@ class BoutiqueMonitorRunTest {
   }
 
   @Test
+  @Timeout(30)
+  void userStopBeforeTheFirstStoreSampleIsStoppedNotStartupFailed() throws Exception {
+    MonitorState state = new MonitorState(2_000);
+    RunPlan plan = RunPlan.create(Scenario.boutiqueLive(), System.currentTimeMillis());
+    state.begin(plan);
+    MonitorRun run = MonitorRun.start(plan, runs, state, new InetSocketAddress("127.0.0.1", 0));
+    CompletableFuture<Void> finished = awaitExit(run);
+    try {
+      assertThat(ProcessHandle.of(state.snapshot().applicationPid()).orElseThrow().destroy())
+          .isTrue();
+      finished.get(10, TimeUnit.SECONDS);
+      assertThat(state.snapshot().phase()).isEqualTo("STOPPED");
+      assertThat(state.snapshot().error()).isEmpty();
+      assertThat(state.snapshot().exitCode()).isNotZero();
+    } finally {
+      run.close();
+    }
+  }
+
+  @Test
+  @Timeout(60)
+  void monitorCloseGracefullyCleansBoutiqueAndReleasesTheEdgePort() throws Exception {
+    int edgePort;
+    try (ServerSocket reservation = new ServerSocket()) {
+      reservation.bind(new InetSocketAddress("127.0.0.1", 0));
+      edgePort = reservation.getLocalPort();
+    }
+    InetSocketAddress edgeBind = new InetSocketAddress("127.0.0.1", edgePort);
+
+    MonitorState firstState = new MonitorState(2_000);
+    RunPlan firstPlan = RunPlan.create(Scenario.boutiqueLive(), System.currentTimeMillis());
+    firstState.begin(firstPlan);
+    MonitorRun first = MonitorRun.start(firstPlan, runs, firstState, edgeBind);
+    CompletableFuture<Void> firstFinished = awaitExit(first);
+    first.close();
+    firstFinished.get(10, TimeUnit.SECONDS);
+    assertThat(firstState.snapshot().exitCode()).isZero();
+    assertThat(firstState.snapshot().phase()).isEqualTo("STOPPED");
+
+    MonitorState secondState = new MonitorState(2_000);
+    RunPlan secondPlan = RunPlan.create(Scenario.boutiqueLive(), System.currentTimeMillis());
+    secondState.begin(secondPlan);
+    MonitorRun second = MonitorRun.start(secondPlan, runs, secondState, edgeBind);
+    CompletableFuture<Void> secondFinished = awaitExit(second);
+    second.close();
+    secondFinished.get(10, TimeUnit.SECONDS);
+    assertThat(secondState.snapshot().exitCode()).isZero();
+  }
+
+  @Test
+  @Timeout(60)
+  void closedControlPipeRejectsInjectionInsteadOfDroppingTheRequest() throws Exception {
+    try (Session session = start(Scenario.boutiqueDeadlock())) {
+      application(session.run).getOutputStream().close();
+      assertThat(session.run.inject()).isFalse();
+    }
+  }
+
+  @Test
   @Timeout(60)
   void boutiqueThenChainClearsProcessState() throws Exception {
     MonitorState state;
@@ -177,15 +236,7 @@ class BoutiqueMonitorRunTest {
     MonitorState state = new MonitorState(2_000);
     state.begin(plan);
     MonitorRun run = MonitorRun.start(plan, runs, state, new InetSocketAddress("127.0.0.1", 0));
-    CompletableFuture<Void> finished =
-        CompletableFuture.runAsync(
-            () -> {
-              try {
-                run.awaitExit();
-              } catch (Exception failure) {
-                throw new RuntimeException(failure);
-              }
-            });
+    CompletableFuture<Void> finished = awaitExit(run);
     Session session = new Session(plan, state, run, finished);
     try {
       await(state, Duration.ofSeconds(20), snapshot -> snapshot.store() != null);
@@ -194,6 +245,23 @@ class BoutiqueMonitorRunTest {
       session.close();
       throw failure;
     }
+  }
+
+  private static CompletableFuture<Void> awaitExit(MonitorRun run) {
+    return CompletableFuture.runAsync(
+        () -> {
+          try {
+            run.awaitExit();
+          } catch (Exception failure) {
+            throw new RuntimeException(failure);
+          }
+        });
+  }
+
+  private static Process application(MonitorRun run) throws Exception {
+    Field field = MonitorRun.class.getDeclaredField("application");
+    field.setAccessible(true);
+    return (Process) field.get(run);
   }
 
   private static void await(

@@ -73,26 +73,28 @@ function render(state) {
   $('arrivals').textContent = arrivals.size;
   $('call-count').textContent = `${arrivals.size} received call${arrivals.size === 1 ? '' : 's'}`;
   const services = $('services'); services.replaceChildren();
+  const serviceLatest = new Map((state.service_latest || []).map(service => [service.instance_id,service]));
   for (const pool of manifest.pools) {
     const latestUnits = new Map((state.unit_latest || []).filter(unit => unit.instance_id === pool.instance_id).map(unit => [unit.unit_id,unit]));
     const owners = new Map(pool.unit_ids.map(id => { const unit = latestUnits.get(id); return [id, unit?.state === 'free' ? null : unit?.state === 'held' ? unit.execution_id : 'unknown']; }));
-    let lastSeq = Math.max(0, ...[...latestUnits.values()].map(unit => unit.local_seq));
-    // Compatibility with Chain snapshots before the bounded latest-unit handoff.
-    if (!state.unit_latest && application === 'CHAIN' && !state.discarded_observations) {
+    const projected = serviceLatest.get(pool.instance_id);
+    let lastSeq = projected?.local_seq || 0, blocked = projected?.blocked || 0, queued = projected?.queued || 0;
+    if (!projected) {
+      const blocks = new Set(), waits = new Set();
       for (const event of [...(byInstance.get(pool.instance_id) || [])].sort((a,b) => a.local_seq - b.local_seq)) {
-        lastSeq = Math.max(lastSeq,event.local_seq);
-        const payload = event.payload;
-        if (payload.event_type === 'resource.init' && payload.resource_id === pool.resource_id) for (const id of payload.unit_ids) if (owners.has(id)) owners.set(id,null);
-        if (owners.has(payload.resource_instance_id)) {
-          if (payload.event_type === 'resource.acquire') owners.set(payload.resource_instance_id,payload.execution_id);
-          if (payload.event_type === 'resource.release') owners.set(payload.resource_instance_id,null);
-        }
+        const payload = event.payload; lastSeq = Math.max(lastSeq,event.local_seq);
+        if (payload.event_type === 'resource.wait.begin') waits.add(payload.invocation_id);
+        if (payload.event_type === 'resource.acquire') waits.delete(payload.invocation_id);
+        if (payload.event_type === 'execution.cancel' && !payload.execution_id) waits.delete(payload.invocation_id);
+        if (payload.event_type === 'rpc.block.begin') blocks.add(payload.execution_id);
+        if (['rpc.block.end','execution.end','resource.release'].includes(payload.event_type)) blocks.delete(payload.execution_id);
       }
+      blocked = blocks.size; queued = waits.size;
     }
     const exited = state.application_pid && !state.application_alive;
     const card = text('div', '', exited ? 'service stopped' : 'service'); card.append(text('h3', `${serviceByInstance[pool.instance_id]}${exited ? ' · STOPPED' : ''}`));
     card.append(text('p', `${pool.unit_ids.length} declared worker${pool.unit_ids.length === 1 ? '' : 's'} · seq ${lastSeq || '—'}`));
-    card.append(text('p', state.unit_latest ? 'Latest received observation per slot' : 'Bounded display history · unknown if truncated'));
+    card.append(text('p', `${blocked} blocked · ${queued} queued`));
     const slots = text('div', '', 'slots');
     for (const unit of pool.unit_ids) { const owner = owners.get(unit); const slot = text('span', '', `slot ${owner === 'unknown' ? 'unknown' : owner ? 'held' : ''}`); slot.title = `${exited ? 'Historical observation: ' : ''}${short(unit)}: ${owner === 'unknown' ? 'unknown' : owner ? short(owner) : 'observed free'}`; slots.append(slot); }
     card.append(slots); services.append(card);

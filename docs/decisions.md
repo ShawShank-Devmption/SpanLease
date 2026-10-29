@@ -223,3 +223,16 @@ independent A-TRUTH recorder. CI configuration is not evidence that a remote CI 
 passed. Actual command results belong in verification records. Formal I-LITMUS/I-CI
 and G2 acceptance still require the G1 review and existing task prerequisites; G1–G3
 remain pending. *Affects:* final-demo T9 and CI, not the analyzer's confirmation rules.
+
+**D24 | 2026-10-29 | Sequence display projections and graceful Boutique child cleanup.**
+The monitor's manifest-bounded slot, blocked, queued and latest-sequence projections now reject
+older instance-local transitions. They remain operator display state only and never supply analyzer
+input. Boutique children accept a graceful STOP control, treat parent stdin EOF as a stop, and use a
+TERM shutdown hook as fallback; deployment close emits its final root checkpoint and flushes OTLP
+before normal exit. Startup failures are explicit child messages rather than inferred from a missing
+500 ms store sample. Graceful release telemetry can produce a later certified negative cut after a
+retained positive; the page continues to distinguish latest analysis from historical confirmation.
+*Why:* reordered/retried display batches could roll slots backward, while hard process termination
+lost final telemetry, leaked the fixed edge port and mislabeled early operator stops as startup
+failures. *Affects:* testbed monitor/application lifecycle and static UI only; no event, manifest,
+replay or report schema change, no analyzer predicate change and no G1–G3 acceptance.
