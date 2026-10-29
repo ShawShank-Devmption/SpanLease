@@ -122,7 +122,14 @@ class BoutiqueDeploymentTest {
           0,
           10,
           TimeUnit.MILLISECONDS);
-      return result.get(5, TimeUnit.SECONDS);
+      try {
+        return result.get(5, TimeUnit.SECONDS);
+      } catch (TimeoutException timeout) {
+        throw new AssertionError(
+            "Timed out waiting for ten edge deadlines: "
+                + deployment.store(System.currentTimeMillis()),
+            timeout);
+      }
     }
   }
 
