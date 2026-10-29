@@ -75,12 +75,25 @@ Author integration review checks the browser consumes analyzer verdicts, slot di
 uses `unit_latest`, returned text uses `textContent`, store calls carry no diagnostic
 header, injection has its own root Context, and no detector production/schema changes
 were introduced. This is author review, not independent cross-lane approval.
-The initial remote CI run failed while awaiting ten edge deadline counters in
-`BoutiqueDeploymentTest`. A cold channel could consume a 100 ms deadline before
-server admission. The test now verifies a healthy call to establish the transport
-before injecting; all ten fault-call timeout assertions and the counter threshold
-remain unchanged. All five targeted deployment tests and the full clean-clone build
-pass after this setup change. Remote CI passed at `6a2f6d8` in 3m51s, including the build, nine DOM checks and
-both litmus tests: [run 40796656629](https://github.com/ShawShank-Devmption/SpanLease/actions/runs/40796656629).
+CI exposed a mismatch between client and edge observations in the deployment test:
+a failing run recorded 11 forwarded calls (one healthy warmup), one OK, nine edge
+deadlines and one other failure, while all ten fault calls timed out at the client.
+A propagated cancellation can reach the edge before its local deadline expires;
+[gRPC's server cancellation path](https://github.com/grpc/grpc-java/blob/v1.76.0/core/src/main/java/io/grpc/internal/ServerImpl.java#L821-L835)
+can therefore cancel its Context independently of the local deadline timer.
+
+The deployment test establishes a healthy transport, then drives bounded additional
+100 ms calls until it observes ten edge deadlines. Every attempted fault call must
+still return `DEADLINE_EXCEEDED` to the client; at least ten attempts and at least ten
+edge deadline outcomes remain mandatory. The test retains the five-second final
+observation bound and now includes actual counters on timeout. It does not relabel
+cancellations, relax the threshold, extend frontend deadlines, or alter production
+code. This resolves a test workload assumption, not an analyzer defect.
+
+After this correction, the isolated clean source clone passed all 154 Java tests
+in 2m11s. Remote CI at `84a85c1` passed in 3m46s, including build, DOM regressions
+and both litmus integrations: [run 40799267291](https://github.com/ShawShank-Devmption/SpanLease/actions/runs/40799267291).
+The concurrent working-tree slot-display review changes were excluded from this
+isolated build; their separate verification is recorded below.
 
 Independent review and G1–G3 acceptance are not asserted.
