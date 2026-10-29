@@ -48,14 +48,23 @@ class BoutiqueDeploymentTest {
         var fault = deployment.inject();
         assertThatThrownBy(() -> fault.get(3, TimeUnit.SECONDS))
             .isInstanceOf(TimeoutException.class);
-        for (int index = 0; index < 10; index++) {
+        // A client timeout can arrive as cancellation before the edge's own
+        // deadline expires. Keep driving until ten deadlines are observed at
+        // the edge, without relabelling those cancellations or relaxing counts.
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        int calls = 0;
+        do {
           assertThatThrownBy(() -> stub(channel).getAds(kitchen()))
               .isInstanceOfSatisfying(
                   StatusRuntimeException.class,
                   failure ->
                       assertThat(failure.getStatus().getCode())
                           .isEqualTo(Status.Code.DEADLINE_EXCEEDED));
-        }
+          calls++;
+        } while ((calls < 10
+                || deployment.store(System.currentTimeMillis()).deadlineExceeded() < 10)
+            && System.nanoTime() < until);
+        assertThat(calls).isGreaterThanOrEqualTo(10);
         assertThat(awaitDeadlines(deployment).deadlineExceeded()).isGreaterThanOrEqualTo(10);
         assertThatThrownBy(deployment::inject).isInstanceOf(IllegalStateException.class);
       } finally {
