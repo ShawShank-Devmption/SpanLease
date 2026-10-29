@@ -93,7 +93,7 @@ code. This resolves a test workload assumption, not an analyzer defect.
 After this correction, the isolated clean source clone passed all 154 Java tests
 in 2m11s. Remote CI at `84a85c1` passed in 3m46s, including build, DOM regressions
 and both litmus integrations: [run 40799267291](https://github.com/ShawShank-Devmption/SpanLease/actions/runs/40799267291).
-The concurrent working-tree slot-display review changes were excluded from this
-isolated build; their separate verification is recorded below.
+Concurrent, uncommitted slot-display changes were excluded from this isolated
+build and CI result.
 
 Independent review and G1–G3 acceptance are not asserted.
