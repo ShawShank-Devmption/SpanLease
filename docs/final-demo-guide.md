@@ -125,8 +125,7 @@ needed. Review the two implementation lanes for the design's anti-goals.
 ## Verified on
 
 Local Dev 2 checks on 2026-10-29 ran on Darwin arm64,
-`Ananyas-MacBook-Air.local`, using Temurin Java 21.0.13 from
-`/Users/ananyaganesan/Projects/MiniLang/.minilang-tools/jdk-21.0.13+9/Contents/Home`.
+`Ananyas-MacBook-Air.local`, using Temurin Java 21.0.13 selected through `JAVA_HOME`.
 The final `./gradlew --no-daemon clean build integrationTest` passed all 106 build
 tests and both real litmus tests (108 Java tests total). `spotlessApply`,
 `node --check testbed/src/main/resources/monitor/monitor.js`, and
@@ -134,7 +133,8 @@ tests and both real litmus tests (108 Java tests total). `spotlessApply`,
 implementation checks, not a clean-clone rehearsal. No browser was available, so
 light/dark visual checks at desktop/mobile sizes were not performed. CI is configured
 to run the nine DOM tests with Node 22 and upload test artifacts;
-remote CI execution has not been verified. The full final-demo qualification record
+remote CI was not verified in that lane check; the later integrated CI result is
+recorded in [integrated verification](final-demo-verification.md). The full final-demo qualification record
 remains pending T11.
 
 Dev 1 separately recorded real Docker-store runs on 2026-10-29:
@@ -144,10 +144,12 @@ See [source verification](../third_party/online-boutique/SOURCE.md#local-verific
 and [runtime handoff](dev1-final-demo-handoff.md) for observations, machine details
 and the reconnect measurement. These precede integration with the final UI.
 
-**Combined T11 qualification is pending.** Record the integrated clean-clone build,
-browser walkthrough, real Docker run IDs, 15-minute cadence and cross-lane review in
-[the integrated verification record](final-demo-verification.md). Earlier lane checks
-do not establish combined acceptance or independent review.
+**Combined T11 verification is partly complete.** The clean-clone build, real Docker
+API walkthrough, 15-minute live-store run and end-of-run cadence check passed; see
+[the integrated verification record](final-demo-verification.md) for run IDs, test
+counts and results. The full browser visual matrix is blocked by the computer-use
+service, and independent cross-lane sign-off is pending. These checks do not establish
+G1–G3 acceptance.
 
 ## Limits
 

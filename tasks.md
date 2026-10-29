@@ -97,17 +97,17 @@ Implementation status is distinct from verification and gate acceptance.
 
 | Task | Owner | Status on this branch |
 |---|---|---|
-| T1 — Boutique scenarios and snapshot fields | Dev 1 | Implemented; integrated runtime verification in progress |
+| T1 — Boutique scenarios and snapshot fields | Dev 1 | Implemented; combined Java/API checks passed |
 | T2 — Upstream ad-service adaptation | Dev 1 | Implemented; source provenance recorded |
-| T3 — Edge driver, deployment and injection | Dev 1 | Implemented; integrated runtime verification in progress |
-| T4 — Monitor process/control integration | Dev 1 | Implemented; integrated runtime verification in progress |
+| T3 — Edge driver, deployment and injection | Dev 1 | Implemented; combined Java/API checks passed |
+| T4 — Monitor process/control integration | Dev 1 | Implemented; combined Java/API checks passed |
 | T5 — Boutique real-process evidence tests | Dev 1 | Implemented; real-process evidence tests included |
 | T6 — Pinned Compose store and reconnect measurement | Dev 1 | Implemented; Dev 1 Docker verification recorded |
 | T7 — Flat monotone monitor layout | Dev 2 | UI implementation added; final browser rehearsal pending |
-| T8 — Source toggle and Boutique UI | Dev 2 | Implemented; integrated browser verification pending |
+| T8 — Source toggle and Boutique UI | Dev 2 | Implemented; combined API/DOM checks passed; visual qualification pending |
 | T9 — Real litmus integration tests and CI | Dev 2 | Implemented, pre-G1, not accepted; two local integration tests passed |
 | T10 — README, runbook and status | Dev 2 | Reconciled with both lanes; combined qualification record in progress |
-| T11 — Clean-clone rehearsal and sign-off | Both | Pending combined rehearsal; historical Dev 1 Docker runs recorded |
+| T11 — Clean-clone rehearsal and sign-off | Both | Clean-clone/Docker/15-minute cadence passed; visual matrix and independent sign-off pending |
 
 I-LITMUS/I-CI: **implemented, pre-G1, not accepted** for the two automated litmus
 regressions and CI invocation only. Their expected core uses topology and manifest
@@ -120,7 +120,7 @@ Local Dev 2 verification on 2026-10-29 on Darwin arm64
 DOM tests passed. CI is configured for Node 22 DOM tests and artifact uploads;
 remote CI execution is not claimed. No browser was available, so desktop/mobile light/dark visual
 verification remains pending alongside T11 clean-clone/Docker rehearsal. See the
-[runbook verification record](docs/final-demo-guide.md#verified-on) for the JDK path
+[runbook verification record](docs/final-demo-guide.md#verified-on) for the JDK version
 and scope of these checks.
 
 The remaining backlog is A-TRUTH independent gate truth, A-FAULT/I-FAULT fault runs,

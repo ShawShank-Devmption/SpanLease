@@ -107,3 +107,11 @@ dependencies with the analyzer-process runtime configuration.
 The combined `./gradlew build` passed in 1m50s: 152 tests, zero failures/errors/skips
 (testbed 82; other module counts unchanged). The original uncommitted
 `build_deck.py` edit is outside these commits.
+
+## Combined implementation follow-up
+
+The `feat/final-demo-integrated` branch merges this runtime handoff with Ananya's
+T7–T10 UI/litmus/documentation work. The earlier lane-local pending inventory above
+is historical. See `docs/final-demo-verification.md` for combined build, Docker
+rehearsal, browser limitations and final T11 status. Independent review and G1–G3
+acceptance remain distinct from this integration.
