@@ -37,10 +37,17 @@ class BoutiqueDeploymentTest {
   @Test
   void injectDeadlocksAdsAAndStoreCallsTimeOut() throws Exception {
     try (var deployment = start(Scenario.boutiqueDeadlock())) {
-      var fault = deployment.inject();
-      assertThatThrownBy(() -> fault.get(3, TimeUnit.SECONDS)).isInstanceOf(TimeoutException.class);
       ManagedChannel channel = channel(deployment.edgePort());
       try {
+        // Establish the transport before measuring frontend-sized deadlines. A cold
+        // channel may time out before the edge receives a call on a loaded CI host.
+        assertKitchen(
+            AdServiceGrpc.newBlockingStub(channel)
+                .withDeadlineAfter(5, TimeUnit.SECONDS)
+                .getAds(kitchen()));
+        var fault = deployment.inject();
+        assertThatThrownBy(() -> fault.get(3, TimeUnit.SECONDS))
+            .isInstanceOf(TimeoutException.class);
         for (int index = 0; index < 10; index++) {
           assertThatThrownBy(() -> stub(channel).getAds(kitchen()))
               .isInstanceOfSatisfying(
