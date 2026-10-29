@@ -1,0 +1,188 @@
+# SpanLease demo commands (macOS + zsh)
+#
+
+: <<'SPANLEASE_ARCHITECTURE_MERMAID'
+INTENDED SPANLEASE ARCHITECTURE
+
+```mermaid
+flowchart LR
+    subgraph Runtime["Instrumented Java/gRPC service"]
+        ARR["ServerStreamTracer<br/>records request arrival"]
+        ADAPTER["Unary service adapter"]
+        GATE["SlotTrackingExecutor<br/>bounded worker slots"]
+        JOB["Application handler<br/>owns one slot"]
+        RPC["Blocking RPC helper"]
+        STUB["grpc-java blocking stub"]
+
+        ARR --> ADAPTER
+        ADAPTER -->|submit decoded job| GATE
+        GATE -->|acquire before execution| JOB
+        JOB --> RPC
+        RPC -->|record block and send| STUB
+        STUB -->|response or local failure| RPC
+        JOB -->|actual exit| GATE
+    end
+
+    subgraph Events["Dev B: observation production"]
+        DTO["Schema-v2 ObservationEvent<br/>sequence and causal parent"]
+        SINK["EventSink<br/>non-blocking offer"]
+        QUEUE["Bounded telemetry queue"]
+        OTEL["OpenTelemetry SDK<br/>custom LogRecord"]
+        EXPORT["OTLP exporter"]
+    end
+
+    subgraph Analysis["Dev C: analysis and classification"]
+        RECEIVER["Bounded OTLP receiver"]
+        DECODER["OtlpEventDecoder<br/>validation"]
+        PREFIX["Checkpoint-certified<br/>contiguous prefixes"]
+        CUT["Causally consistent cut"]
+        GRAPH["Wait and ownership graph"]
+        REDUCE["Observed-progress reduction"]
+        TIME["Persistence and lease check"]
+        VERDICT["Verdict report<br/>and evidence graph"]
+    end
+
+    GATE -->|init, wait, acquire,<br/>end, release, checkpoint| DTO
+    RPC -->|block begin/end,<br/>send and response| DTO
+    DTO --> SINK
+    SINK -->|immediate bounded offer| QUEUE
+    QUEUE -->|background thread| OTEL
+    OTEL --> EXPORT
+
+    EXPORT -->|OTLP/gRPC| RECEIVER
+    RECEIVER --> DECODER
+    DECODER --> PREFIX
+    PREFIX --> CUT
+    CUT --> GRAPH
+    GRAPH --> REDUCE
+    REDUCE --> TIME
+    TIME --> VERDICT
+
+    CANCEL["Cancellation request"] -.->|recorded but does not release slot| GATE
+```
+SPANLEASE_ARCHITECTURE_MERMAID
+
+: <<'CURRENT_DEMO_MERMAID'
+CURRENT DEMO FLOW: START TO VERDICT LABEL
+
+```mermaid
+flowchart TD
+    START["Run<br/>./gradlew :analyzer:productionDemo"]
+    MAIN["ProductionDemo.main()"]
+
+    DEADLOCK["Build closed-ring scenario<br/>A, B and C have one slot"]
+    SPARE["Build spare-capacity scenario<br/>A has additional free slot A1"]
+
+    MANIFEST1["Create immutable manifest<br/>demo-deadlock"]
+    MANIFEST2["Create immutable manifest<br/>demo-spare"]
+
+    EVENTS1["Create deterministic v2 events<br/>A waits for B<br/>B waits for C<br/>C queues at A"]
+    EVENTS2["Create equivalent events<br/>with spare slot A1"]
+
+    ENGINE1["Create AnalyzerEngine"]
+    ENGINE2["Create AnalyzerEngine"]
+    INGEST1["Ingest observations directly"]
+    INGEST2["Ingest observations directly"]
+
+    CHECK1["Certify contiguous<br/>checkpoint prefixes"]
+    CHECK2["Certify contiguous<br/>checkpoint prefixes"]
+    CUT1["Construct causal cut"]
+    CUT2["Construct causal cut"]
+
+    GRAPH1["Reconstruct blocked execution,<br/>queue and slot-ownership graph"]
+    GRAPH2["Reconstruct graph"]
+    REDUCE1["Run progress reduction<br/>closed residual survives"]
+    REDUCE2["Run progress reduction<br/>free slot removes queue<br/>and dependent waits"]
+    PERSIST["Verify uninterrupted overlap<br/>2670 ms is at least tau of 2000 ms"]
+
+    POSITIVE["CONFIRMED_DEADLOCK"]
+    NEGATIVE["CONFIRMED_NO_DEADLOCK"]
+    JSON1["Emit deterministic JSON report"]
+    JSON2["Emit deterministic JSON report"]
+    DOT["Extract core.edges with jq"]
+    SVG["Graphviz renders<br/>deadlock-graph.svg"]
+
+    BYPASS["Current demo bypasses:<br/>live gRPC services<br/>SlotTrackingExecutor<br/>OtelEventSink and OTLP"]
+
+    START --> MAIN
+    MAIN --> DEADLOCK
+    MAIN --> SPARE
+
+    DEADLOCK --> MANIFEST1 --> EVENTS1 --> ENGINE1 --> INGEST1
+    SPARE --> MANIFEST2 --> EVENTS2 --> ENGINE2 --> INGEST2
+
+    INGEST1 --> CHECK1 --> CUT1 --> GRAPH1 --> REDUCE1 --> PERSIST --> POSITIVE --> JSON1
+    INGEST2 --> CHECK2 --> CUT2 --> GRAPH2 --> REDUCE2 --> NEGATIVE --> JSON2
+
+    JSON1 --> DOT --> SVG
+    MAIN -.-> BYPASS
+```
+CURRENT_DEMO_MERMAID
+
+cd /Users/shashankbhat/Projects/os_project
+
+# 1. Select the required Java 21 runtime.
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+command -v jq
+
+# 2. Optional: verify the real grpc-java gate/lifecycle feasibility path.
+# This is a real loopback RPC test, but it is not the complete three-service deadlock.
+./gradlew :testbed:test --tests dev.spanlease.testbed.GrpcGateFeasibilityTest
+
+# 3. Run the deterministic production-analyzer demo and save its output.
+mkdir -p build/demo
+./gradlew -q :analyzer:productionDemo | tee build/demo/production-demo.txt
+
+# 4. Extract the closed-ring and spare-capacity JSON reports.
+sed -n '2p' build/demo/production-demo.txt | jq . > build/demo/deadlock-report.json
+sed -n '4p' build/demo/production-demo.txt | jq . > build/demo/spare-capacity-report.json
+
+# 5. See the closed wait that the analyzer evaluated.
+jq '{
+  blocked_executions: [.core.executions[] | {
+    execution: .id,
+    waits_for_invocation: .blocked_on_invocation
+  }],
+  queued_requests: .core.queue_entries,
+  occupied_slots: [.core.units[] | {
+    slot: .id,
+    owned_by_execution: .owner_execution_id
+  }],
+  persistence: .persistence
+}' build/demo/deadlock-report.json
+
+# 6. Show and assert SpanLease's verdict.
+jq -r '"SpanLease verdict: \(.verdict)",
+       "Certified persistence: \(.persistence.narrowed_span_ms) ms (required: \(.persistence.tau_ms) ms)"' \
+  build/demo/deadlock-report.json
+test "$(jq -r '.verdict' build/demo/deadlock-report.json)" = "CONFIRMED_DEADLOCK"
+echo "PASS: SpanLease reported CONFIRMED_DEADLOCK"
+
+# 7. Print the evidence graph used by the report.
+jq -r '"SpanLease evidence graph:",
+       (.core.edges[] | "  \(.from) --\(.kind)--> \(.to)")' \
+  build/demo/deadlock-report.json | tee build/demo/deadlock-graph.txt
+
+# 8. Save the same evidence graph in Graphviz DOT format.
+jq -r '"digraph SpanLeaseEvidence {",
+       "  rankdir=LR;",
+       (.core.edges[] |
+         "  \"" + .from + "\" -> \"" + .to + "\" [label=\"" + .kind + "\"];") ,
+       "}"' build/demo/deadlock-report.json | tee build/demo/deadlock-graph.dot
+
+# 9. Optional: if Graphviz is installed, render and open the graph as SVG.
+if command -v dot >/dev/null 2>&1; then
+  dot -Tsvg build/demo/deadlock-graph.dot -o build/demo/deadlock-graph.svg
+  open build/demo/deadlock-graph.svg
+else
+  echo "Graphviz is not installed; the text and DOT graphs are still available in build/demo/."
+fi
+
+# 10. Show the spare-capacity negative control.
+jq -r '"Negative-control verdict: \(.verdict)",
+       "Residual evidence nodes: \((.core.executions + .core.queue_entries + .core.units) | length)"' \
+  build/demo/spare-capacity-report.json
+test "$(jq -r '.verdict' build/demo/spare-capacity-report.json)" = "CONFIRMED_NO_DEADLOCK"
+echo "PASS: spare capacity reduced the candidate graph to empty"

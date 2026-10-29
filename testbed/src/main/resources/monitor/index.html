@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="control-token" content="CONTROL_TOKEN">
+  <title>SpanLease · Live gRPC monitor</title><link rel="stylesheet" href="/monitor.css">
+  <script src="/monitor.js" defer></script>
+</head>
+<body>
+<header><a class="brand" href="/">◈ <strong>SpanLease</strong><span>LIVE MONITOR</span></a><span id="connection" class="connection">Connecting…</span></header>
+<main>
+  <section class="controls" aria-label="Run controls"><fieldset id="source-toggle"><legend>Source</legend><label><input type="radio" name="source" value="synthetic" checked> Synthetic</label><label><input type="radio" name="source" value="boutique"> Online Boutique</label></fieldset><label for="scenario">Scenario</label><select id="scenario"></select><button id="start">Start live run</button><button id="inject" hidden disabled>Inject fault</button><a id="store-link" hidden target="_blank" rel="noopener noreferrer">Open store ↗</a><p id="control-note">One run at a time. Every request and verdict is computed live.</p></section>
+  <div class="source"><span class="dot"></span><span id="source">Live Chain · real local gRPC / OTLP · controlled workload</span><span id="run-id">No active run</span></div>
+  <article id="verdict-panel" class="panel verdict neutral" aria-live="polite"><p class="eyebrow">DEADLOCK RESULT · HISTORICAL EVIDENCE RETAINED</p><h2 id="verdict-title">Ready to observe</h2><p id="verdict-detail">Start a run. The analyzer waits for complete evidence before confirming a result.</p><div id="missing" class="missing"></div><p id="cut" class="caption"></p><p id="latest-cut" class="caption"></p></article>
+  <section class="metrics" aria-label="Run statistics"><div><span>RECEIVED RECORDS</span><strong id="records">0</strong></div><div><span>INCOMING RPCS IN VIEW</span><strong id="arrivals">0</strong></div><div><span>DEADLOCK DETECTED IN THIS RUN</span><strong id="confirmed">—</strong></div><div><span>APPLICATION STATUS</span><strong id="phase">IDLE</strong></div></section>
+  <section class="workspace"><div class="left"><article class="panel"><div class="panel-head"><h2>Service observations</h2><span>Latest local sequence · not a global snapshot</span></div><div id="services" class="services"><p class="muted">Start a run to see the declared workers and received observations.</p></div><p class="caption">Latest received observation per slot · not a certified snapshot</p></article>
+    <article class="panel calls-panel"><div class="panel-head"><h2>Incoming gRPC calls</h2><span id="call-count">Waiting for traffic</span></div><div class="table-wrap"><table><thead><tr><th>RECEIVED</th><th>SERVICE</th><th>INVOCATION</th><th>LAST OBSERVATION</th></tr></thead><tbody id="calls"><tr><td colspan="4" class="empty">Real incoming calls appear here after you start a run.</td></tr></tbody></table></div></article>
+    <article id="store-panel" class="panel" hidden><h2>Store traffic</h2><div id="store-stats"></div><div id="store-ads"></div><div id="fault"></div></article>
+  </div><aside class="right">
+    <article class="panel evidence"><div class="panel-head"><h2>Evidence & result</h2><span id="evidence-label">No confirmation yet</span></div><div id="result"><p class="muted">A confirmed wait preserves its exact evidence here, even after later cancellation changes the latest verdict.</p></div></article>
+  <section class="panel process-panel" aria-live="polite"><div class="panel-head"><h2>Application process & manual stop</h2><span id="process-status">No workload process</span></div><div id="process"><p class="muted">The workload runs in a separate JVM. Its PID will appear here.</p></div></section>
+    <article class="panel"><div class="panel-head"><h2>Run activity</h2></div><ol id="activity" class="activity"><li>Waiting for a run.</li></ol></article>
+  </aside></section>
+    <details class="panel"><summary>Received event stream · decoded OTLP records</summary><div id="events" class="events"><p class="muted">No synthetic display events.</p></div><p id="retention" class="caption">Display history is bounded; detector evidence is retained independently.</p></details>
+    <details class="panel"><summary>OS, JVM & actual worker threads</summary><p id="diagnostic-time">No sample yet</p><div id="runtime"><p class="muted">Process and thread diagnostics appear during a run.</p></div><p class="caption">These timestamped diagnostic samples are separate from the certified detector interval. A Java thread ID is not a native OS thread ID. JVM WAITING is not itself proof of an RPC deadlock.</p></details>
+<details class="panel"><summary>Inspect latest report JSON</summary><pre id="raw">null</pre></details>
+  <footer>Research prototype · verdicts describe reported historical cuts</footer>
+</main>
+</body></html>
