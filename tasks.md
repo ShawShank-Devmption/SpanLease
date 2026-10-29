@@ -92,22 +92,22 @@ stage-1 inventory above remain the implementation baseline. The imported evidenc
 does not establish independent Dev C review or G1–G3 acceptance.
 ### Final demo — 2026-10-29
 
-This Dev 2 handoff follows the [final-demo plan](docs/superpowers/plans/2026-10-29-final-demo.md).
+This integrated implementation follows the [final-demo plan](docs/superpowers/plans/2026-10-29-final-demo.md).
 Implementation status is distinct from verification and gate acceptance.
 
 | Task | Owner | Status on this branch |
 |---|---|---|
-| T1 — Boutique scenarios and snapshot fields | Dev 1 | Pending runtime handoff |
-| T2 — Upstream ad-service adaptation | Dev 1 | Pending runtime/source handoff |
-| T3 — Edge driver, deployment and injection | Dev 1 | Pending runtime handoff |
-| T4 — Monitor process/control integration | Dev 1 | Pending runtime handoff |
-| T5 — Boutique real-process evidence tests | Dev 1 | Pending runtime and verification |
-| T6 — Pinned Compose store and reconnect measurement | Dev 1 | Pending deployment and Docker verification |
+| T1 — Boutique scenarios and snapshot fields | Dev 1 | Implemented; integrated runtime verification in progress |
+| T2 — Upstream ad-service adaptation | Dev 1 | Implemented; source provenance recorded |
+| T3 — Edge driver, deployment and injection | Dev 1 | Implemented; integrated runtime verification in progress |
+| T4 — Monitor process/control integration | Dev 1 | Implemented; integrated runtime verification in progress |
+| T5 — Boutique real-process evidence tests | Dev 1 | Implemented; real-process evidence tests included |
+| T6 — Pinned Compose store and reconnect measurement | Dev 1 | Implemented; Dev 1 Docker verification recorded |
 | T7 — Flat monotone monitor layout | Dev 2 | UI implementation added; final browser rehearsal pending |
-| T8 — Source toggle and Boutique UI | Dev 2 | UI implementation added; live Boutique verification blocked on T1–T6 |
+| T8 — Source toggle and Boutique UI | Dev 2 | Implemented; integrated browser verification pending |
 | T9 — Real litmus integration tests and CI | Dev 2 | Implemented, pre-G1, not accepted; two local integration tests passed |
-| T10 — README, runbook and status | Dev 2 | Documentation added; actual verification section remains pending |
-| T11 — Clean-clone rehearsal and sign-off | Both | Pending; no final-demo run IDs or Docker/cadence results claimed |
+| T10 — README, runbook and status | Dev 2 | Reconciled with both lanes; combined qualification record in progress |
+| T11 — Clean-clone rehearsal and sign-off | Both | Pending combined rehearsal; historical Dev 1 Docker runs recorded |
 
 I-LITMUS/I-CI: **implemented, pre-G1, not accepted** for the two automated litmus
 regressions and CI invocation only. Their expected core uses topology and manifest

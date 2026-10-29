@@ -124,9 +124,9 @@ alone does not update the remote or unblock a developer who lacks the artifacts.
 
 See the [final demo runbook](docs/final-demo-guide.md) for startup, the five-minute
 walkthrough, troubleshooting and the pending verification record. The monitor offers
-**Synthetic** Chain scenarios and an **Online Boutique** UI. On this Dev 2 branch,
-Boutique runtime/edge/Compose support (T1–T6) remains a separate pending handoff;
-selecting the UI does not provide those services. The two litmus regressions run with:
+**Synthetic** Chain scenarios and **Online Boutique** live store traffic, with the
+integrated edge, instrumented ad replicas and pinned Compose deployment. Restart
+the Compose frontend after starting each new Boutique run (see the runbook). The two litmus regressions run with:
 
 ```sh
 ./gradlew integrationTest
