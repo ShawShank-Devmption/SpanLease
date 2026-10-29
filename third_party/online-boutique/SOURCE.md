@@ -112,3 +112,12 @@ manifest, bounded retained reports, monitor result and first-deadlock report whe
 applicable. These local build artifacts are gitignored and survive until that build
 directory is cleaned. The full Dev 2 UI and joint T11 / 15-minute rehearsal remain
 pending. These checks do not establish G1–G3 acceptance or research guarantees.
+
+### Integrated follow-up
+
+The later `feat/final-demo-integrated` branch includes the Dev 2 UI and litmus suite.
+Its clean-clone build, real Docker walkthrough and 15-minute live-store cadence
+check passed; full visual qualification and independent sign-off remain pending.
+See [integrated verification](../../docs/final-demo-verification.md) for exact
+results and run IDs. This supersedes the earlier lane-local pending inventory,
+without changing the source provenance or research acceptance limits above.

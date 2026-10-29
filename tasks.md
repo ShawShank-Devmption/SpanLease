@@ -101,12 +101,12 @@ Implementation status is distinct from verification and gate acceptance.
 | T2 — Upstream ad-service adaptation | Dev 1 | Implemented; source provenance recorded |
 | T3 — Edge driver, deployment and injection | Dev 1 | Implemented; combined Java/API checks passed |
 | T4 — Monitor process/control integration | Dev 1 | Implemented; combined Java/API checks passed |
-| T5 — Boutique real-process evidence tests | Dev 1 | Implemented; real-process evidence tests included |
-| T6 — Pinned Compose store and reconnect measurement | Dev 1 | Implemented; Dev 1 Docker verification recorded |
+| T5 — Boutique real-process evidence tests | Dev 1 | Implemented; combined real-process tests passed |
+| T6 — Pinned Compose store and reconnect measurement | Dev 1 | Implemented; combined Docker walkthrough passed; reconnect measurement recorded |
 | T7 — Flat monotone monitor layout | Dev 2 | UI implementation added; final browser rehearsal pending |
 | T8 — Source toggle and Boutique UI | Dev 2 | Implemented; combined API/DOM checks passed; visual qualification pending |
-| T9 — Real litmus integration tests and CI | Dev 2 | Implemented, pre-G1, not accepted; two local integration tests passed |
-| T10 — README, runbook and status | Dev 2 | Reconciled with both lanes; combined qualification record in progress |
+| T9 — Real litmus integration tests and CI | Dev 2 | Implemented, pre-G1, not accepted; local and remote CI litmus tests passed |
+| T10 — README, runbook and status | Dev 2 | Reconciled with both lanes; combined qualification results recorded |
 | T11 — Clean-clone rehearsal and sign-off | Both | Clean-clone/Docker/15-minute cadence passed; visual matrix and independent sign-off pending |
 
 I-LITMUS/I-CI: **implemented, pre-G1, not accepted** for the two automated litmus
@@ -122,6 +122,10 @@ remote CI execution is not claimed. No browser was available, so desktop/mobile 
 verification remains pending alongside T11 clean-clone/Docker rehearsal. See the
 [runbook verification record](docs/final-demo-guide.md#verified-on) for the JDK version
 and scope of these checks.
+
+The subsequent integrated build, remote CI, Docker and 15-minute results are in
+[`docs/final-demo-verification.md`](docs/final-demo-verification.md); the preceding
+Dev 2 paragraph describes its earlier lane-local verification only.
 
 The remaining backlog is A-TRUTH independent gate truth, A-FAULT/I-FAULT fault runs,
 bare/instrumented equivalence, B-INTEROP SDK retry/partial-success, C-REPLAY archive,
